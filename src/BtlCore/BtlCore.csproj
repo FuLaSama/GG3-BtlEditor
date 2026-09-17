@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>BtlCore</RootNamespace>
+    <AssemblyName>BtlCore</AssemblyName>
+    <Description>BTL FlatBuffers to BtlFront (new core)</Description>
+  </PropertyGroup>
+
+    <ItemGroup>
+      <EmbeddedResource Include="..\..\schema\battle.fbs" LogicalName="battle.fbs" Condition="Exists('..\..\schema\battle.fbs')" />
+    </ItemGroup>
+
+</Project>

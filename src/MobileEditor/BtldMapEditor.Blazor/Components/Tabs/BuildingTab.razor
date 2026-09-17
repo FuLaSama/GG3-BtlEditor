@@ -1,0 +1,126 @@
+@using BtldMapEditor
+
+@if (SelectedCell != null)
+{
+    <div style="font-weight:bold; color:#f97316; margin-bottom:12px;">[ 建筑基础设施 ]</div>
+
+    <div class="form-group-single" style="flex-direction:row; gap:10px; align-items:center; margin-bottom:12px;">
+        <input type="checkbox" id="chkHasBldg" checked="@(SelectedCell.TriggerBldg != null)" @onchange="ToggleHasBldg" style="width:20px; height:20px;" />
+        <label for="chkHasBldg" class="form-label" style="margin:0; font-size:15px; font-weight:bold;">在此地块建造建筑</label>
+    </div>
+
+    @if (SelectedCell.TriggerBldg?.DetailBldg?.BuildingData != null)
+    {
+        var bData = SelectedCell.TriggerBldg.DetailBldg.BuildingData;
+
+        <div class="form-group-single">
+            <label class="form-label">建筑类型 (BuildingId):</label>
+            <input type="number" class="form-input" value="@bData.BuildingId" @onchange="e => bData.BuildingId = ParseUshortNullable(e.Value)" placeholder="空" />
+            <div style="font-size:12px; color:#f97316; margin-top:4px;">名称: @(bData.BuildingId.HasValue ? GameSettings.GetBuildingName(bData.BuildingId.Value) : "--")</div>
+        </div>
+
+        <div class="form-group-single">
+            <label class="form-label">归属势力 (Owner):</label>
+            <input type="number" class="form-input" value="@bData.Owner" @onchange="e => bData.Owner = ParseByteNullable(e.Value)" placeholder="空" />
+        </div>
+
+        <div class="form-group-single">
+            <label class="form-label">位置微调 Dx:</label>
+            <input type="number" class="form-input" value="@bData.Dx" @onchange="e => bData.Dx = ParseSByteNullable(e.Value)" placeholder="空" />
+        </div>
+
+        <div class="form-group-single">
+            <label class="form-label">位置微调 Dy:</label>
+            <input type="number" class="form-input" value="@bData.Dy" @onchange="e => bData.Dy = ParseSByteNullable(e.Value)" placeholder="空" />
+        </div>
+
+        <div class="form-group-single">
+            <label class="form-label">参数标志 (Flag / Val1):</label>
+            <input type="number" class="form-input" value="@bData.Val1" @onchange="e => bData.Val1 = ParseUshortNullable(e.Value)" placeholder="空" />
+        </div>
+
+        <div class="form-group-single">
+            <label class="form-label">额外标志 (ExtraFlag / Val2):</label>
+            <input type="number" class="form-input" value="@bData.Val2" @onchange="e => bData.Val2 = ParseByteNullable(e.Value)" placeholder="空" />
+        </div>
+    }
+
+    <hr style="border-color:var(--border-color); margin:15px 0;" />
+
+    <div style="font-weight:bold; color:#a855f7; margin-bottom:12px;">[ 军事要塞防御 ]</div>
+
+    <div class="form-group-single" style="flex-direction:row; gap:10px; align-items:center; margin-bottom:12px;">
+        <input type="checkbox" id="chkHasFort" checked="@(SelectedCell.TriggerFort != null)" @onchange="ToggleHasFort" style="width:20px; height:20px;" />
+        <label for="chkHasFort" class="form-label" style="margin:0; font-size:15px; font-weight:bold;">部署军事要塞</label>
+    </div>
+
+    @if (SelectedCell.TriggerFort?.DetailFort != null)
+    {
+        var dFort = SelectedCell.TriggerFort.DetailFort;
+
+        <div class="form-group-single">
+            <label class="form-label">要塞类型 (FortId):</label>
+            <input type="number" class="form-input" value="@dFort.FortId" @onchange="e => dFort.FortId = ParseUshortNullable(e.Value)" placeholder="空" />
+            <div style="font-size:12px; color:#a855f7; margin-top:4px;">名称: @(dFort.FortId.HasValue ? GameSettings.GetBuildingName(dFort.FortId.Value) : "--")</div>
+        </div>
+
+        <div class="form-group-single">
+            <label class="form-label">防御等级 (Field1):</label>
+            <input type="number" class="form-input" value="@SelectedCell.TriggerFort.Field1" @onchange="e => SelectedCell.TriggerFort.Field1 = ParseUshortNullable(e.Value) ?? 0" placeholder="空" />
+        </div>
+    }
+}
+else
+{
+    <div style="color:var(--text-muted); text-align:center; padding:20px;">请在地图上点击选择一个六角格地块</div>
+}
+
+@code {
+    [Parameter] public CellItem? SelectedCell { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private async Task ToggleHasBldg(ChangeEventArgs e)
+    {
+        if (SelectedCell == null) return;
+        bool isChecked = (bool)(e.Value ?? false);
+        if (isChecked)
+        {
+            SelectedCell.TriggerBldg = new TriggerEventModel
+            {
+                Field1 = 1,
+                DetailBldg = new TriggerEventBldgModel
+                {
+                    BuildingData = new BuildingDataModel { BuildingId = 1, Owner = 1, Val1 = null, Val2 = null }
+                }
+            };
+        }
+        else
+        {
+            SelectedCell.TriggerBldg = null;
+        }
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task ToggleHasFort(ChangeEventArgs e)
+    {
+        if (SelectedCell == null) return;
+        bool isChecked = (bool)(e.Value ?? false);
+        if (isChecked)
+        {
+            SelectedCell.TriggerFort = new TriggerEventModel
+            {
+                Field1 = 2,
+                DetailFort = new TriggerEventFortModel { FortId = 1 }
+            };
+        }
+        else
+        {
+            SelectedCell.TriggerFort = null;
+        }
+        await OnChanged.InvokeAsync();
+    }
+
+    private ushort? ParseUshortNullable(object? val) => ushort.TryParse(val?.ToString(), out ushort res) ? res : null;
+    private byte? ParseByteNullable(object? val) => byte.TryParse(val?.ToString(), out byte res) ? res : null;
+    private sbyte? ParseSByteNullable(object? val) => sbyte.TryParse(val?.ToString(), out sbyte res) ? res : null;
+}

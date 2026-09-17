@@ -1,0 +1,348 @@
+@page "/"
+@inject IJSRuntime JS
+@using BtldMapEditor
+@using System.IO
+@using System.Text.Json
+@using BtldMapEditor.Blazor.Components
+@using BtldMapEditor.Blazor.Components.Tabs
+
+<div class="app-container">
+    <!-- Top Action Bar -->
+    <div class="top-action-bar">
+        <div class="action-btn-group">
+            <label class="btn-mobile-action btn-primary-action" style="margin:0; cursor:pointer;" title="打开 BTL 或 JSON 关卡文件">
+                📂 打开文件
+                <InputFile OnChange="OnInputFileChange" accept=".btl,.json" style="display:none;" />
+            </label>
+            <button class="btn-mobile-action btn-success-action" @onclick="SaveBtlFile" title="编译并导出为二进制 .btl 文件">💾 保存 BTL</button>
+            <button class="btn-mobile-action btn-warning-action" @onclick="SaveJsonFile" title="导出为格式化 .json 文件">📄 保存 JSON</button>
+        </div>
+
+        <div class="action-btn-group">
+            <button class="btn-mobile-action @(BrushMode ? "btn-toggle-active" : "")" @onclick="ToggleBrushMode">
+                🖌️ 涂抹模式
+            </button>
+            <button class="btn-mobile-action" @onclick="CopyTile">📋 复制</button>
+            <button class="btn-mobile-action" @onclick="PasteTile">📌 粘贴</button>
+        </div>
+
+        <div class="action-btn-group">
+            <button class="btn-mobile-action" @onclick="ZoomIn">🔍 +</button>
+            <button class="btn-mobile-action" @onclick="ZoomOut">🔍 -</button>
+            <button class="btn-mobile-action" @onclick="ResetView">🎯 重置视角</button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(StatusMessage))
+        {
+            <div style="font-size:13px; font-weight:600; color:#38bdf8; padding:0 8px; white-space:nowrap;">
+                @StatusMessage
+            </div>
+        }
+    </div>
+
+    <!-- Main Workspace (Canvas + Sidebar) -->
+    <div class="main-workspace">
+        <HexMapCanvas @ref="_canvasRef"
+                      Stage="@Stage"
+                      SelectedCellIdx="@SelectedCellIdx"
+                      BrushMode="@BrushMode"
+                      BrushRadius="@BrushRadius"
+                      SelectedCellIdxChanged="OnCellSelected"
+                      OnPaintRequested="OnPaintRequested" />
+
+        <!-- Collapsible Mobile Drawer Sidebar -->
+        <div class="sidebar-drawer @(IsDrawerCollapsed ? "collapsed" : "")">
+            <div class="sidebar-tabs-header">
+                <button class="tab-btn @(ActiveTab == "terrain" ? "active" : "")" @onclick='() => ActiveTab = "terrain"'>地形</button>
+                <button class="tab-btn @(ActiveTab == "unit" ? "active" : "")" @onclick='() => ActiveTab = "unit"'>部队</button>
+                <button class="tab-btn @(ActiveTab == "building" ? "active" : "")" @onclick='() => ActiveTab = "building"'>建筑</button>
+                <button class="tab-btn @(ActiveTab == "faction" ? "active" : "")" @onclick='() => ActiveTab = "faction"'>势力</button>
+                <button class="tab-btn @(ActiveTab == "global" ? "active" : "")" @onclick='() => ActiveTab = "global"'>全局</button>
+            </div>
+
+            <div class="sidebar-tab-content">
+                @if (ActiveTab == "terrain")
+                {
+                    <TerrainTab SelectedCell="@SelectedCell" OnChanged="OnModelDataChanged" />
+                }
+                else if (ActiveTab == "unit")
+                {
+                    <UnitTab SelectedCell="@SelectedCell" OnChanged="OnModelDataChanged" />
+                }
+                else if (ActiveTab == "building")
+                {
+                    <BuildingTab SelectedCell="@SelectedCell" OnChanged="OnModelDataChanged" />
+                }
+                else if (ActiveTab == "faction")
+                {
+                    <FactionTab Stage="@Stage" OnChanged="OnModelDataChanged" />
+                }
+                else if (ActiveTab == "global")
+                {
+                    <GlobalTab Stage="@Stage" OnChanged="OnModelDataChanged" />
+                }
+            </div>
+        </div>
+
+        <!-- Floating Mobile Toggle Button -->
+        <button class="btn-drawer-toggle" @onclick="ToggleDrawer" title="切换属性面板">
+            @(IsDrawerCollapsed ? "⚙️" : "✖️")
+        </button>
+    </div>
+</div>
+
+@code {
+    private StageModel Stage { get; set; } = new StageModel();
+    private int SelectedCellIdx { get; set; } = 0;
+    private string ActiveTab { get; set; } = "terrain";
+    private bool IsDrawerCollapsed { get; set; } = false;
+    private bool BrushMode { get; set; } = false;
+    private int BrushRadius { get; set; } = 0;
+    private string LoadedFileName { get; set; } = "默认地图 (30x30)";
+    private string StatusMessage { get; set; } = "";
+
+    private HexMapCanvas? _canvasRef;
+    private CellItem? _copiedCellState;
+
+    private CellItem? SelectedCell
+    {
+        get
+        {
+            if (Stage?.MapTerrain?.Tiles != null && SelectedCellIdx >= 0 && SelectedCellIdx < Stage.MapTerrain.Tiles.Count)
+            {
+                ushort tileVal = Stage.MapTerrain.Tiles[SelectedCellIdx];
+                int w = Stage.MapTerrain.Size?.Width ?? 30;
+                var item = new CellItem
+                {
+                    Index = SelectedCellIdx,
+                    X = SelectedCellIdx % w,
+                    Y = SelectedCellIdx / w,
+                    Terrain = tileVal
+                };
+
+                // Bind unit if present
+                if (Stage.AIInfo?.Agents != null)
+                {
+                    item.Unit = Stage.AIInfo.Agents.FirstOrDefault(a => a.AgentInfo?.CellIdx == SelectedCellIdx);
+                }
+
+                // Bind building / fort if present
+                if (Stage.TriggerInfo?.Events != null)
+                {
+                    item.TriggerBldg = Stage.TriggerInfo.Events.FirstOrDefault(e => e.TileIndex == SelectedCellIdx && e.DetailBldg != null);
+                    item.TriggerFort = Stage.TriggerInfo.Events.FirstOrDefault(e => e.TileIndex == SelectedCellIdx && e.DetailFort != null);
+                }
+
+                return item;
+            }
+            return null;
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        CreateDefaultStage();
+    }
+
+    private void CreateDefaultStage()
+    {
+        Stage = new StageModel
+        {
+            Version = 8,
+            StageMetadata = new StageMetadataModel { StageNum = 1 },
+            MapTerrain = new MapTerrainModel
+            {
+                Size = new SizeModel { Width = 30, Height = 30 },
+                Tiles = new List<ushort>()
+            },
+            FactionInfo = new FactionInfoModel
+            {
+                Factions = new List<FactionModel>
+                {
+                    new FactionModel { Info = new FactionMetadataModel { FactionId = 1, CountryId = 1, Camp = 1 } },
+                    new FactionModel { Info = new FactionMetadataModel { FactionId = 2, CountryId = 2, Camp = 2 } }
+                }
+            }
+        };
+
+        for (int i = 0; i < 900; i++)
+        {
+            Stage.MapTerrain.Tiles.Add(0x0100); // BaseTerrain 1 (Plains), Variation 0
+        }
+        LoadedFileName = "新建地图 (30x30)";
+        StatusMessage = "就绪";
+    }
+
+    private async Task OnInputFileChange(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+
+        StatusMessage = "⏳ 正在载入...";
+        StateHasChanged();
+
+        try
+        {
+            using var ms = new MemoryStream();
+            await file.OpenReadStream(maxAllowedSize: 20 * 1024 * 1024).CopyToAsync(ms);
+            byte[] bytes = ms.ToArray();
+
+            string filename = file.Name;
+            string lowerName = filename.ToLower();
+
+            if (lowerName.EndsWith(".btl"))
+            {
+                string tempBtl = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".btl");
+                try
+                {
+                    await File.WriteAllBytesAsync(tempBtl, bytes);
+                    var stage = EditorBridge.LoadFromBtl(tempBtl);
+                    if (stage != null)
+                    {
+                        Stage = stage;
+                        SelectedCellIdx = 0;
+                        LoadedFileName = filename;
+                        StatusMessage = $"已载入 {filename}";
+                        await RefreshCanvas();
+                    }
+                }
+                finally
+                {
+                    if (File.Exists(tempBtl)) File.Delete(tempBtl);
+                }
+            }
+            else if (lowerName.EndsWith(".json"))
+            {
+                string json = System.Text.Encoding.UTF8.GetString(bytes);
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var stage = JsonSerializer.Deserialize<StageModel>(json, options);
+                if (stage != null)
+                {
+                    Stage = stage;
+                    SelectedCellIdx = 0;
+                    LoadedFileName = filename;
+                    StatusMessage = $"已载入 {filename}";
+                    await RefreshCanvas();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"❌ 载入失败: {ex.Message}";
+            Console.WriteLine($"[File Open Error] {ex}");
+        }
+    }
+
+    private async Task SaveBtlFile()
+    {
+        if (Stage == null) return;
+        StatusMessage = "⏳ 正在编译 BTL...";
+        StateHasChanged();
+
+        try
+        {
+            string tempBtl = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".btl");
+            try
+            {
+                EditorBridge.SaveToBtl(Stage, tempBtl);
+                byte[] btlBytes = await File.ReadAllBytesAsync(tempBtl);
+
+                string outName = Path.GetFileNameWithoutExtension(LoadedFileName) + "_compiled.btl";
+                await JS.InvokeVoidAsync("FileInterop.downloadFile", outName, "application/octet-stream", btlBytes);
+                StatusMessage = "✅ BTL 编译成功！";
+            }
+            finally
+            {
+                if (File.Exists(tempBtl)) File.Delete(tempBtl);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"❌ BTL 编译失败: {ex.Message}";
+            Console.WriteLine($"[Save BTL Error] {ex}");
+        }
+    }
+
+    private async Task SaveJsonFile()
+    {
+        if (Stage == null) return;
+        StatusMessage = "⏳ 正在导出 JSON...";
+        StateHasChanged();
+
+        try
+        {
+            var options = new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+            };
+            string jsonStr = JsonSerializer.Serialize(Stage, options);
+            byte[] jsonBytes = System.Text.Encoding.UTF8.GetBytes(jsonStr);
+
+            string outName = Path.GetFileNameWithoutExtension(LoadedFileName) + "_exported.json";
+            await JS.InvokeVoidAsync("FileInterop.downloadFile", outName, "application/json", jsonBytes);
+            StatusMessage = "✅ JSON 导出成功！";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"❌ JSON 导出失败: {ex.Message}";
+            Console.WriteLine($"[Save JSON Error] {ex}");
+        }
+    }
+
+    private void ToggleDrawer() => IsDrawerCollapsed = !IsDrawerCollapsed;
+    private void ToggleBrushMode() => BrushMode = !BrushMode;
+
+    private void CopyTile()
+    {
+        if (SelectedCell == null) return;
+        _copiedCellState = new CellItem
+        {
+            Terrain = SelectedCell.Terrain,
+            Unit = SelectedCell.Unit,
+            TriggerBldg = SelectedCell.TriggerBldg,
+            TriggerFort = SelectedCell.TriggerFort
+        };
+        StatusMessage = $"已复制地块 #{SelectedCellIdx}";
+    }
+
+    private async Task PasteTile()
+    {
+        if (SelectedCellIdx < 0 || Stage?.MapTerrain?.Tiles == null || _copiedCellState == null) return;
+        Stage.MapTerrain.Tiles[SelectedCellIdx] = _copiedCellState.Terrain;
+        await RefreshCanvas();
+        StatusMessage = $"已粘贴至地块 #{SelectedCellIdx}";
+    }
+
+    private async Task OnCellSelected(int idx)
+    {
+        SelectedCellIdx = idx;
+        StateHasChanged();
+    }
+
+    private async Task OnPaintRequested(int idx)
+    {
+        if (Stage?.MapTerrain?.Tiles == null || idx < 0 || idx >= Stage.MapTerrain.Tiles.Count) return;
+        if (_copiedCellState == null && SelectedCell != null) CopyTile();
+
+        if (_copiedCellState != null)
+        {
+            Stage.MapTerrain.Tiles[idx] = _copiedCellState.Terrain;
+            await RefreshCanvas();
+        }
+    }
+
+    private async Task OnModelDataChanged() => await RefreshCanvas();
+
+    private async Task RefreshCanvas()
+    {
+        if (_canvasRef != null)
+        {
+            await _canvasRef.SyncMapDataToJs();
+        }
+    }
+
+    private async Task ZoomIn() => await JS.InvokeVoidAsync("HexMapRenderer.setZoom", 1.25);
+    private async Task ZoomOut() => await JS.InvokeVoidAsync("HexMapRenderer.setZoom", 0.8);
+    private async Task ResetView() => await JS.InvokeVoidAsync("HexMapRenderer.resetView");
+}

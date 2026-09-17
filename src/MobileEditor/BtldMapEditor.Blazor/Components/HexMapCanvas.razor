@@ -1,0 +1,107 @@
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+@using BtldMapEditor
+
+<div class="canvas-container">
+    <canvas id="hexCanvas" class="map-canvas"></canvas>
+</div>
+
+@code {
+    [Parameter] public StageModel Stage { get; set; }
+    [Parameter] public int SelectedCellIdx { get; set; } = -1;
+    [Parameter] public bool BrushMode { get; set; } = false;
+    [Parameter] public int BrushRadius { get; set; } = 0;
+    [Parameter] public EventCallback<int> SelectedCellIdxChanged { get; set; }
+    [Parameter] public EventCallback<int> OnPaintRequested { get; set; }
+
+    private DotNetObjectReference<HexMapCanvas>? _dotNetRef;
+    private bool _isInitialized = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("HexMapRenderer.init", "hexCanvas", _dotNetRef);
+            _isInitialized = true;
+            await SyncMapDataToJs();
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_isInitialized)
+        {
+            await SyncMapDataToJs();
+        }
+    }
+
+    public async Task SyncMapDataToJs()
+    {
+        if (Stage?.MapTerrain?.Size == null || Stage.MapTerrain.Tiles == null) return;
+
+        int w = Stage.MapTerrain.Size.Width;
+        int h = Stage.MapTerrain.Size.Height;
+        int totalCells = w * h;
+
+        var cellDataList = new List<object>();
+        for (int i = 0; i < totalCells; i++)
+        {
+            ushort tileVal = i < Stage.MapTerrain.Tiles.Count ? Stage.MapTerrain.Tiles[i] : (ushort)0x0100;
+            int bt = tileVal >> 8;
+            int v = tileVal & 0xFF;
+
+            int? bldg = null;
+            int? fort = null;
+            object? unitObj = null;
+
+            if (Stage.TriggerInfo?.Events != null)
+            {
+                foreach (var ev in Stage.TriggerInfo.Events)
+                {
+                    if (ev.TileIndex == i)
+                    {
+                        if (ev.DetailBldg?.BuildingData?.BuildingId != null) bldg = ev.DetailBldg.BuildingData.BuildingId;
+                        if (ev.DetailFort?.FortId != null) fort = ev.DetailFort.FortId;
+                    }
+                }
+            }
+
+            if (Stage.AIInfo?.Agents != null)
+            {
+                foreach (var ag in Stage.AIInfo.Agents)
+                {
+                    if (ag.AgentInfo?.CellIdx == i)
+                    {
+                        unitObj = new { id = ag.AgentInfo.UnitId ?? 0, faction = ag.AgentInfo.FactionId ?? 0 };
+                        break;
+                    }
+                }
+            }
+
+            cellDataList.Add(new { bt, v, bldg, fort, unit = unitObj });
+        }
+
+        await JS.InvokeVoidAsync("HexMapRenderer.loadMapData", w, h, cellDataList);
+        await JS.InvokeVoidAsync("HexMapRenderer.setSelectedCell", SelectedCellIdx);
+        await JS.InvokeVoidAsync("HexMapRenderer.setBrushMode", BrushMode, BrushRadius);
+    }
+
+    [JSInvokable]
+    public async Task OnTileSelected(int idx)
+    {
+        SelectedCellIdx = idx;
+        await SelectedCellIdxChanged.InvokeAsync(idx);
+    }
+
+    [JSInvokable]
+    public async Task OnPaintTileRequested(int idx)
+    {
+        await OnPaintRequested.InvokeAsync(idx);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _dotNetRef?.Dispose();
+    }
+}

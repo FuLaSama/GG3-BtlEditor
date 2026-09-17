@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>将荣 3 BTL 地图编辑器 (Blazor 移动 Web 版)</title>
+    <base href="/" />
+    <link rel="stylesheet" href="css/bootstrap/bootstrap.min.css" />
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link href="BtldMapEditor.Blazor.styles.css" rel="stylesheet" />
+    <link href="manifest.webmanifest" rel="manifest" />
+    <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png" />
+</head>
+
+<body>
+    <div id="app">
+        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; background:#0f172a; color:#38bdf8; font-family:sans-serif;">
+            <div style="font-size:24px; font-weight:bold; margin-bottom:12px;">🗺️ 正在加载地图编辑器...</div>
+            <div style="font-size:14px; color:#94a3b8;">编译级 WASM C# 引擎启动中</div>
+        </div>
+    </div>
+
+    <div id="blazor-error-ui">
+        发生未处理的异常。
+        <a href="" class="reload">刷新</a>
+        <a class="dismiss">🗙</a>
+    </div>
+
+    <script src="js/hexMapRenderer.js"></script>
+    <script src="js/fileDownload.js"></script>
+    <script src="_framework/blazor.webassembly.js"></script>
+    <script>navigator.serviceWorker.register('service-worker.js');</script>
+</body>
+
+</html>

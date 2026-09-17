@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>disable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>BtldMapEditor</RootNamespace>
+    <OutputPath>..\..\dist\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 正式 BtlCore：BTL↔Front。显示用名表/贴图在本工程内。 -->
+    <ProjectReference Include="..\BtlCore\BtlCore.csproj" />
+    <None Include="..\..\schema\battle.fbs" Link="battle.fbs" CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\..\schema\battle.fbs')" />
+    <GameDataFiles Include="..\..\GameData\**\*.*" />
+    <EditorPaletteFiles Include="..\..\地形贴图相关\编辑器贴图\**\*.*" Condition="Exists('..\..\地形贴图相关\编辑器贴图\catalog.json')" />
+    <EditorUnitIconFiles Include="..\..\地形贴图相关\编辑器贴图\兵种图标\**\*.*" Condition="Exists('..\..\地形贴图相关\编辑器贴图\兵种图标')" />
+  </ItemGroup>
+
+  <Target Name="CopyGameData" AfterTargets="Build">
+    <Copy SourceFiles="@(GameDataFiles)" DestinationFolder="$(OutputPath)GameData\%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(EditorPaletteFiles)" DestinationFolder="$(OutputPath)GameData\EditorPalette\%(RecursiveDir)" SkipUnchangedFiles="true" Condition="'@(EditorPaletteFiles)' != ''" />
+    <Copy SourceFiles="@(EditorUnitIconFiles)" DestinationFolder="$(OutputPath)GameData\EditorPalette\UnitIcons\%(RecursiveDir)" SkipUnchangedFiles="true" Condition="'@(EditorUnitIconFiles)' != ''" />
+  </Target>
+</Project>

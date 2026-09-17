@@ -1,0 +1,11 @@
+﻿<Solution>
+  <Project Path="BtldMapEditor.Mobile.Android/BtldMapEditor.Mobile.Android.csproj">
+    <Deploy />
+  </Project>
+  <Project Path="BtldMapEditor.Mobile.Browser/BtldMapEditor.Mobile.Browser.csproj" />
+  <Project Path="BtldMapEditor.Mobile.Desktop/BtldMapEditor.Mobile.Desktop.csproj" />
+  <Project Path="BtldMapEditor.Mobile.iOS/BtldMapEditor.Mobile.iOS.csproj">
+    <Deploy />
+  </Project>
+  <Project Path="BtldMapEditor.Mobile/BtldMapEditor.Mobile.csproj" />
+</Solution>

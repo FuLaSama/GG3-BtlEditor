@@ -1,0 +1,83 @@
+# OS / IDE
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+.vs/
+.idea/
+*.user
+*.suo
+*.userprefs
+*.DotSettings.user
+*.VisualState.xml
+
+# 编译产物
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+[Ll]og/
+[Ll]ogs/
+TestResults/
+artifacts/
+publish/
+runtimes/
+*.exe
+*.dll
+*.pdb
+*.apk
+*.nupkg
+*.deps.json
+*.runtimeconfig.json
+
+# 编辑器打包目录（含误用 -o 留下的旁路输出）
+dist/
+dist-fix/
+dist-fixGameData/
+
+# 关卡二进制 / 本地导出，不进仓库
+*.btl
+*.btlf
+_*.btlfront.json
+*_decompiled*.json
+all_factions_stats.txt
+调试器往返实验数据存放区/
+
+# 本机旧管线测试 / 一次性探针（Dump、Smoke 仍跟踪）
+tools/Diag/
+BtlCore/tools/Diag/
+tools/TestConsole/
+TestConsole/
+tests/TestRunner/
+TestRunner/
+
+# 工具跑出来的临时输出
+tests/Smoke/_*.json
+tests/Smoke/_*.csx
+tests/Smoke/*.btlfront.json
+BtlCore/tools/Smoke/_*.json
+BtlCore/tools/Smoke/_*.csx
+BtlCore/tools/Smoke/*.btlfront.json
+
+# 日志、临时检查
+*.log
+*.tmp
+check_temp/
+backup/
+
+# 本地资料、样本、旧代码副本（不是当前工程源码）
+旧版/
+杂项/
+结构研究/
+实验用数据/
+战役相关文件/
+自制地图和官方地图结构/
+地形贴图相关/
+往返实验数据区/
+export-for-ai/
+代码分析笔记/
+btl相关代码/
+bug修复记录/
+BTL/
+GameData/
+gamedata/

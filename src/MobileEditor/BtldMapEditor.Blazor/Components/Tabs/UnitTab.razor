@@ -1,0 +1,116 @@
+@using BtldMapEditor
+
+@if (SelectedCell != null)
+{
+    <div style="font-weight:bold; color:#0284c7; margin-bottom:12px;">[ 军事单位部署 ]</div>
+
+    <div class="form-group-single" style="flex-direction:row; gap:10px; align-items:center; margin-bottom:12px;">
+        <input type="checkbox" id="chkHasUnit" checked="@(SelectedCell.Unit != null)" @onchange="ToggleHasUnit" style="width:20px; height:20px;" />
+        <label for="chkHasUnit" class="form-label" style="margin:0; font-size:15px; font-weight:bold;">在此地块部署部队</label>
+    </div>
+
+    @if (SelectedCell.Unit != null)
+    {
+        var info = SelectedCell.Unit.AgentInfo ?? new AgentInfoModel();
+
+        <div class="form-group-single">
+            <label class="form-label">兵种 ID (UnitId):</label>
+            <input type="number" class="form-input" value="@info.UnitId" @onchange="e => SetUnitId(e.Value)" placeholder="空" />
+            <div style="font-size:12px; color:#38bdf8; margin-top:4px;">名称: @(info.UnitId.HasValue ? GameSettings.GetUnitName(info.UnitId.Value) : "--")</div>
+        </div>
+
+        <div class="form-group-single">
+            <label class="form-label">所属势力 (FactionId):</label>
+            <input type="number" class="form-input" value="@info.FactionId" @onchange="e => info.FactionId = ParseUshortNullable(e.Value)" placeholder="空" />
+        </div>
+
+        <div class="form-group-single">
+            <label class="form-label">生命值 (HP):</label>
+            <input type="number" class="form-input" value="@info.HP" @onchange="e => info.HP = ParseUshortNullable(e.Value)" placeholder="空" />
+        </div>
+
+        <div class="form-group-single">
+            <label class="form-label">最大生命值 (Max HP):</label>
+            <input type="number" class="form-input" value="@info.MaxHP" @onchange="e => info.MaxHP = ParseUshortNullable(e.Value)" placeholder="空" />
+        </div>
+
+        <div class="form-group-single">
+            <label class="form-label">编制数 (StackCount):</label>
+            <input type="number" class="form-input" value="@info.StackCount" @onchange="e => info.StackCount = ParseUshortNullable(e.Value)" placeholder="空" />
+        </div>
+
+        <div class="form-group-single">
+            <label class="form-label">AI 攻击目标 / 士气 (Morale):</label>
+            <input type="number" class="form-input" value="@SelectedCell.Unit.Morale" @onchange="e => SelectedCell.Unit.Morale = ParseByteNullable(e.Value)" placeholder="空" />
+        </div>
+
+        <div class="form-group-single">
+            <label class="form-label">等级 (Level):</label>
+            <input type="number" class="form-input" value="@info.Val5" @onchange="e => info.Val5 = ParseUshortNullable(e.Value)" placeholder="空" />
+        </div>
+
+        <div class="form-group-single">
+            <label class="form-label">未知参数 8 (Val8):</label>
+            <input type="number" class="form-input" value="@info.Val8" @onchange="e => info.Val8 = ParseUshortNullable(e.Value)" placeholder="空" />
+        </div>
+
+        <div class="form-group-single">
+            <label class="form-label">未知参数 9 (Val9):</label>
+            <input type="number" class="form-input" value="@info.Val9" @onchange="e => info.Val9 = ParseUshortNullable(e.Value)" placeholder="空" />
+        </div>
+
+        <div class="form-group-single">
+            <label class="form-label">逻辑 Agent ID:</label>
+            <input type="number" class="form-input" value="@info.AgentId" @onchange="e => info.AgentId = ParseUshortNullable(e.Value)" placeholder="空" />
+        </div>
+
+        <div class="form-group-single">
+            <label class="form-label">势力附加属性 (FactionExtra):</label>
+            <input type="number" class="form-input" value="@SelectedCell.Unit.FactionIdExtra" @onchange="e => SelectedCell.Unit.FactionIdExtra = ParseByteNullable(e.Value)" placeholder="空" />
+        </div>
+    }
+}
+else
+{
+    <div style="color:var(--text-muted); text-align:center; padding:20px;">请在地图上点击选择一个六角格地块</div>
+}
+
+@code {
+    [Parameter] public CellItem? SelectedCell { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private async Task ToggleHasUnit(ChangeEventArgs e)
+    {
+        if (SelectedCell == null) return;
+        bool isChecked = (bool)(e.Value ?? false);
+        if (isChecked)
+        {
+            SelectedCell.Unit = new AIAgentModel
+            {
+                AgentInfo = new AgentInfoModel
+                {
+                    UnitId = 1,
+                    FactionId = 1,
+                    HP = 100,
+                    MaxHP = 100,
+                    CellIdx = (ushort)SelectedCell.Index
+                }
+            };
+        }
+        else
+        {
+            SelectedCell.Unit = null;
+        }
+        await OnChanged.InvokeAsync();
+    }
+
+    private void SetUnitId(object? val)
+    {
+        if (SelectedCell?.Unit?.AgentInfo == null) return;
+        SelectedCell.Unit.AgentInfo.UnitId = ParseUshortNullable(val);
+        OnChanged.InvokeAsync();
+    }
+
+    private ushort? ParseUshortNullable(object? val) => ushort.TryParse(val?.ToString(), out ushort res) ? res : null;
+    private byte? ParseByteNullable(object? val) => byte.TryParse(val?.ToString(), out byte res) ? res : null;
+}

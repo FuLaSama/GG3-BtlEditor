@@ -1,0 +1,510 @@
+// FlatBuffers Schema for Glory of Generals 3 Campaign BTL Files
+// Reconstructed from decompiled pseudo-C verifiers, getters, and notes.
+// 本文件仅作为btl字段功能的临时记录，随时会更新，取名不具有参考价值
+
+namespace Btl;
+
+// FlatBuffers 结构层元数据注释（不属于任何 table/struct 的字段）
+struct _Meta {
+  entry_point:uint; // BTL 文件入口指针 (指向 Root Table 的绝对地址)
+  vtable_size:ushort; // Root Table 虚拟表大小 (字段表头长度)
+  vtable_table_size:ushort; // Root Table 实例数据区大小
+}
+
+struct Size {
+  width:ushort; // 地图总宽度（格子数）
+  height:ushort; // 地图总高度（格子数）
+  left_margin:ushort; // 左侧留白（不可操作区域）
+  top_margin:ushort; // 顶部留白（不可操作区域）
+  playable_width:ushort; // 可操作区域宽度
+  playable_height:ushort; // 可操作区域高度
+}
+
+struct TileAttr {
+  byte0:ubyte; // 地表/地形ID (例如 21普通森林, 34草地丘陵)
+  byte1:ubyte; // 变种id
+  byte2:byte;  // 渲染水平微调偏移量 dx (signed 8-bit)
+  byte3:byte;  // 渲染垂直微调偏移量 dy (signed 8-bit)
+}
+
+struct TriggerAction {
+  action_type:ushort; // 触发动作类型
+  param1:ushort; // 触发动作参数
+  x:ushort; // 触发目标X坐标
+  y:ushort; // 触发目标Y坐标
+}
+
+struct AgentInfo {
+  cell_idx:ushort; // 部署的坐标格子ID/格子索引
+  faction_id:ushort; // 归属阵营 (使用战役id)
+  agent_id:ushort; // 部队在AI系统中的运行时唯一UID
+  unit_id:ushort; // 兵种配置ID (json里定义的)
+  stack_count:ushort; // 编数与部队等级，2字节，前一个字节为编数，后一个字节为等级
+  val5:ushort; // 部队初始行动力(不太确定)与兵模朝向(格式同上)
+  hp:ushort; // 部队当前生命值
+  max_hp:ushort; // 部队最大生命值
+  val8:ushort; // 不知道
+  val9:ushort; // 不知道
+}
+
+struct FactionMetadata {
+  faction_id:ushort; // 战役内ID
+  country_id:ushort; // 国家ID (对应 CountrySettings.json)
+  camp:ubyte; // 阵营id (数字不同互相敌对, 0=中立)
+  is_ai:ubyte; // 控制权类型 (0=玩家操控, 1=AI操控)
+  general_limit:ubyte; // 不知道
+  align_1:ubyte; // 对齐占位符
+  initial_gold:uint; // 初始金币资源
+  initial_tech:uint; // 初始科技资源
+  income_modifier:float; // 资源收入倍率修正系数 (默认1.0)(不太确定)
+  damage_modifier:float; // 部队攻击力修正系数 (默认1.0)(不太确定)
+  hp_modifier:float; // 部队生命值倍率修正系数 (默认1.0)
+  color:uint; // 势力代表颜色 (RGBA)(不太确定)
+  align_2:ushort; // 对齐占位符
+  config_id:ushort; // 不动,可能是征服用的
+}
+
+// 枚举值描述表 - 关卡目标类型 (StageTarget.target_type)
+struct _Enum_StageTargetType {
+  type_6:ushort; // 占领目标(主要目标)
+  type_8:ushort; // 击败将领
+  type_9:ushort; // 占领关键目标(完美条件次要目标)
+}
+
+// 枚举值描述表 - AI部队目标标记类型 (AIAgent.target_type)
+struct _Enum_AITargetType {
+  type_0:ubyte; // 待测试
+  type_2:ubyte; // 待测试
+  type_4:ubyte; // 待测试
+}
+
+table MapTerrain {
+  size:Size (id: 0); // 地图尺寸结构体
+  val1:ubyte (id: 1); // 不知道
+  tiles:[ushort] (id: 2); // 地块ID数组 (低8位: 基础地形&变种; 高8位: bit10/11/12激活属性插槽A1/A2/A3, bit9为海洋判定)
+  attributes:[TileAttr] (id: 3); // 地块动态属性数组 (非1:1映射，只当tiles高字节A1/A2/A3标志位为1时才顺次消费)
+  val2:bool (id: 4); // 不知道
+}
+
+table StageTarget {
+  target_type:ushort (id: 0); // 目标类型
+  target_value:short (id: 1); // 目标值
+  param1:ushort (id: 2); // 参数1
+  param2:ushort (id: 3); // 参数2
+  unk:ubyte (id: 4); // @alias(flag) 不知道
+}
+
+table StageMetadata {
+  targets:[StageTarget] (id: 0); // 关卡目标列表,就是上面那个数组
+  round_limit:ushort (id: 1); // 关卡总回合限制
+}
+
+table ReinforcePoint {
+  cell_idx:ushort (id: 0); // 部署地块格子索引 (格子ID)
+  faction_id:ubyte (id: 1); // 归属阵营ID
+  val1:bool (id: 2); // @alias(is_key_unit) 不知道
+  val2:ubyte (id: 3); // @alias(flag) 不知道
+}
+
+table BattleInfo {
+  field_0:ushort (id: 0); // 占位符
+  reinforce_points:[ReinforcePoint] (id: 1); // 增员部队部署点列表
+}
+
+// 势力军力配置条目 (Faction 表 id:2 子表向量元素),为空
+table FactionForceEntry {
+  country_id:ushort (id: 0); // 关联国家/势力ID
+  strength:ubyte (id: 1);    // 军力/部署等级
+  flag:ubyte (id: 2);        // 附加标志
+}
+
+// 势力分配条目 (Faction 表 id:3 子表向量元素),为空
+table FactionAssignEntry {
+  key_id:ushort (id: 0);  // 索引键 (地块/区域ID)
+  value:ushort (id: 1);   // 关联值
+}
+
+// 势力目标条目 (Faction 表 id:5 子表向量元素),为空
+table FactionTargetEntry {
+  key_id:ushort (id: 0);  // 索引键 (地块/区域ID)
+  value:short (id: 1);    // 目标值 (有符号, 0时走特殊逻辑)
+}
+
+// 兵种限制条目 (FactionDetailConfig id:5 子表向量元素),未启用
+table FactionArmyLimitEntry {
+  type_id:ubyte (id: 0);  // 限制类型ID
+  limit:ushort (id: 1);   // 限制值
+}
+
+// 科技绑定条目 (FactionDetailConfig id:16 子表向量元素),未启用
+table FactionTechBindEntry {
+  tech_id:ushort (id: 0);  // 科技/装备ID
+  param_1:ushort (id: 1);  // 参数1
+  param_2:ushort (id: 2);  // 参数2
+}
+
+// 势力关卡编号/AI信息 (Faction 表 id:6 子表),未启用
+table FactionStageNum {
+  stage_id:ushort (id: 0);     // 关卡/AI标识符
+  packed_data:[ubyte] (id: 1); // 打包的额外配置数据 (由sub_149BA0解包)
+}
+
+// 势力详细配置 (Faction 表 id:4 子表),未启用
+table FactionDetailConfig {
+  general_pool:[ubyte] (id: 0);              // 将领池 (仅使用向量长度确定将领数, 元素内容在此代码路径未读取)
+  field_1:ushort (id: 1);                     // 配置参数
+  tech_ids:[ushort] (id: 2);                 // 已解锁科技ID列表
+  field_3:ushort (id: 3);                     // 配置参数
+  field_4:ushort (id: 4);                     // 配置参数
+  army_limits:[FactionArmyLimitEntry] (id: 5); // 兵种限制列表
+  field_6:ushort (id: 6);                     // 配置参数
+  field_7:ushort (id: 7);                     // 配置参数
+  field_8:ushort (id: 8);                     // 占位符
+  field_9:ushort (id: 9);                     // 占位符
+  field_10:ushort (id: 10);                   // 配置参数
+  field_11:bool (id: 11);                     // 占位符
+  field_12:bool (id: 12);                     // 布尔标志
+  field_13:bool (id: 13);                     // 布尔标志 (战役模式下存储到不同位置)
+  field_14:bool (id: 14);                     // 布尔标志
+  field_15:bool (id: 15);                     // 布尔标志
+  tech_binds:[FactionTechBindEntry] (id: 16); // 科技绑定列表
+  field_17:ushort (id: 17);                   // 占位符
+  field_18:ushort (id: 18);                   // 占位符
+  field_19:ushort (id: 19);                   // 配置参数
+  field_20:ushort (id: 20);                   // 配置参数
+  general_states:[ubyte] (id: 21);           // 将领状态字节数组 (与general_pool一一对应)
+  field_22:ubyte (id: 22);                    // 配置参数
+  field_23:ubyte (id: 23);                    // 配置参数
+  field_24:ubyte (id: 24);                    // 配置参数
+}
+
+table FactionLimits {
+  field_0:ushort (id: 0); // 兵力限制参数0
+  field_1:ushort (id: 1); // 兵力限制参数1
+  field_2:ushort (id: 2); // 占位符
+  field_3:ushort (id: 3); // 占位符
+  field_4:ushort (id: 4); // 占位符
+  field_5:ushort (id: 5); // 兵力限制参数5
+}
+
+table FactionCards {
+  field_0:ushort (id: 0); // 卡牌配置参数0
+  field_1:bool (id: 1); // 卡牌配置标志
+  field_2:ushort (id: 2); // 卡牌配置参数2
+  field_3:ushort (id: 3); // 卡牌配置参数3
+}
+
+table Faction {
+  info:FactionMetadata (id: 0);                      // 势力元数据结构体 (36字节 inline struct)
+  tiles:[ubyte] (id: 1);                             // 外交/资源通道向量 (最多5个元素, 对应5个参数通道),为空
+  forces:[FactionForceEntry] (id: 2);                // 军力/科技配置列表,为空
+  assignments:[FactionAssignEntry] (id: 3);          // 分配配置列表,为空
+  detail_config:FactionDetailConfig (id: 4);         // 详细配置子表 (将领/科技/限制等),未启用
+  targets:[FactionTargetEntry] (id: 5);              // 势力目标列表,为空
+  stage_num:FactionStageNum (id: 6);                 // 关卡编号/AI信息子表,未启用
+  val1:ubyte (id: 7);                              // 不知道
+  val2:ushort (id: 8);                         // 不知道
+  general_flag:ubyte (id: 9);                        // 将领标志,未启用
+}
+
+table FactionCardsRelation {
+  faction_id:ushort (id: 0); // 关联阵营ID
+  cards:[ushort] (id: 1); // 卡牌ID列表
+}
+
+table FactionLimitsRelation {
+  faction_id:ushort (id: 0); // 关联阵营ID
+  limits:[ushort] (id: 1); // 兵力限制ID列表
+}
+
+table FactionInfo {
+  factions:[Faction] (id: 0); // 势力列表
+  faction_cards:[FactionCardsRelation] (id: 1); // 阵营卡牌关联表,未启用
+  version:ushort (id: 2); // 默认阵营/关卡势力版本,未启用
+  faction_limits:[FactionLimitsRelation] (id: 3); // 阵营兵力限制关联表,未启用
+}
+
+struct BuildingData {
+  val1:ushort; // 不知道
+  building_id:ushort; // 建筑配置ID (BuildingSettings.json)
+  val2:ubyte; // 不知道
+  owner:ubyte; // 初始归属势力ID
+  dx:byte; // 渲染偏移X
+  dy:byte; // 渲染偏移Y
+}
+
+table TriggerEventSub1 {}
+table TriggerEventSub2 {
+  field_0:ubyte (id: 0);
+  field_1:ushort (id: 1); // 占位符
+  field_2:ushort (id: 2); // 占位符
+  field_3:ubyte (id: 3);
+}
+table TriggerEventSub3 {}
+table TriggerEventSub4 {
+  field_0:ubyte (id: 0);
+  field_1:ushort (id: 1);
+  field_2:ubyte (id: 2);
+}
+table TriggerEventSub5 {
+  field_0:ushort (id: 0);
+}
+
+table TriggerEventBldg {
+  building_data:BuildingData (id: 0); // 8字节建筑数据结构体
+  field_1:TriggerEventSub1 (id: 1); // 不知道,未启用
+  field_2:TriggerEventSub2 (id: 2); // 指向events[0]
+  field_3:TriggerEventSub3 (id: 3); // 似乎为空
+  field_4:TriggerEventSub4 (id: 4); // 指向events[0]
+  field_5:TriggerEventSub5 (id: 5); // 不知道,未启用
+  field_6:ubyte (id: 6); // 不知道
+}
+
+table TriggerEventFort {
+  fort_id:ubyte (id: 0); // 工事ID (1=雷达,2=战壕,3=地堡,4=要塞炮,5=海岸炮)
+  field_1:TriggerEventSub1 (id: 1); // 不知道,未启用
+  field_2:TriggerEventSub2 (id: 2); // 不知道,未启用
+  field_3:ubyte (id: 3); // 反向偏移,指向文件头
+}
+
+table TriggerEvent {
+  tile_index:ushort (id: 0); // 格子索引
+  field_1:ushort (id: 1); // 事件参数,没有配置
+  field_2:bool (id: 2); // 事件标志,没有配置
+  detail_bldg:TriggerEventBldg (id: 3); // 建筑子表,为建筑则配置
+  detail_fort:TriggerEventFort (id: 4); // 工事子表,为工事则配置
+  field_5:ushort (id: 5); // 占位符
+  field_6:ubyte (id: 6); // 补充新增字段
+  field_7:ubyte (id: 7); // 补充新增字段
+}
+
+table TriggerNode {
+  field_0:ushort (id: 0);
+  field_1:ushort (id: 1);
+  field_2:ubyte (id: 2);
+}
+
+table TriggerInfo {
+  events:[TriggerEvent] (id: 0); // 建筑和工事数据
+  conditions:[short] (id: 1); // 条件值数组,似乎固定为空
+  var_values:[short] (id: 2); // 变量值数组,似乎没有配置
+  var_ids:[short] (id: 3); // 变量ID数组,似乎固定为空
+  actions:[TriggerAction] (id: 4); // 触发动作数组,似乎固定为空
+  enabled:bool (id: 5); // 触发系统启用标志,似乎没有配置
+  triggers:[TriggerNode] (id: 6); // 触发节点列表,似乎没有配置
+  tag:short (id: 7); // 触发标签,似乎没有配置
+}
+
+table AIAgentBehavior {
+  field_0:ubyte (id: 0); //本段不太确定
+  field_1:ushort (id: 1); // 行为树节点参数1
+  field_2:short (id: 2); // 行为树节点参数2
+  field_3:ubyte (id: 3); // 行为树节点参数3
+  field_4:ubyte (id: 4); // 行为树节点参数4
+  field_5:ushort (id: 5); // 行为树节点参数5
+  field_6:short (id: 6); // 行为树节点参数6
+}
+
+table Table8Entry {
+  config_id:ushort (id: 0); // 不知道
+  param_1:ushort (id: 1); // 参数1
+  param_2:ushort (id: 2); // 参数2
+}
+
+table AIAgentTable8 {
+  field_0:ubyte (id: 0);//本段不知道
+  field_1:ubyte (id: 1);
+  binds:[Table8Entry] (id: 2);
+  field_3:ubyte (id: 3);
+  field_4:ubyte (id: 4);
+  field_5:int (id: 5);
+  field_6:ubyte (id: 6);
+  field_7:short (id: 7);
+}
+
+table AIAgentTable10 {
+  field_0:ushort (id: 0);//本段不知道
+  field_1:ubyte (id: 1);
+  field_2:ushort (id: 2);
+  field_3:ushort (id: 3);
+  field_4:ushort (id: 4);
+  field_5:ushort (id: 5);
+}
+
+table AIAgentTable11 {
+  general_id:ushort (id: 0); // 绑定的将领配置ID (见 GeneralSettings.json)
+  param1:bool (id: 1); // 不知道
+  param2:ubyte (id: 2); // 不知道
+}
+
+table AIAgentTable12 {
+  field_0:ushort (id: 0);
+  cells:[ubyte] (id: 1); // 移动格子/指令链
+}
+
+table AIAgent {
+  agent_info:AgentInfo (id: 0); // AI部队信息#结构体 (20字节)
+  field_1:ushort (id: 1); // 占位符
+  field_2:ubyte (id: 2); // 附加属性2
+  field_3:AIAgentBehavior (id: 3); // 附加属性3
+  field_4:ushort (id: 4); // 附加属性4
+  field_5:ubyte (id: 5); // 附加属性5
+  field_6:ubyte (id: 6); // 附加属性6
+  faction_id_extra:ubyte (id: 7); // 附加属性7
+  extra_table_8:AIAgentTable8 (id: 8); // 附加属性8
+  field_9:ushort (id: 9); // 占位符
+  extra_table_10:AIAgentTable10 (id: 10); // 附加属性9
+  extra_table_11:AIAgentTable11 (id: 11); // 挂载的将领配置表
+  extra_table_12:AIAgentTable12 (id: 12); // 命令/路线格子链缓存
+  field_13:ushort (id: 13); // 占位符
+  field_14:ubyte (id: 14); // 附加属性14
+}
+
+table AIBehavior {
+  flag:ushort (id: 0); // 行为标志
+  params:[ushort] (id: 1); // 参数列表
+}
+
+table AIRoute {
+  flag:ushort (id: 0); // 路线标志
+  cells:[ushort] (id: 1); // 格子坐标一维索引链
+}
+
+table AIInfo {
+  agents:[AIAgent] (id: 0); // AI部队列表
+  behaviors:[AIBehavior] (id: 1); // AI行为树列表,待探查
+  faction_id:ushort (id: 2); // AI所属阵营ID
+  routes:[AIRoute] (id: 3); // AI路线列表,待探查
+}
+
+table SubRegion {
+  id:ushort (id: 0); // 子区域ID,本段待探查
+  name:string (id: 1); // 子区域名称
+  flag:bool (id: 2); // 激活/特定标志位
+}
+
+table RegionInfo {
+  name:string (id: 0); // 区域名称,本段待探查
+  sub_regions:[SubRegion] (id: 1); // 子区域列表
+  events:[ubyte] (id: 2); // 区域事件与格子绑定数据 (Packed binary stream)
+  properties:[ubyte] (id: 3); // 区域属性数据 (Packed binary stream)
+}
+
+// === StageConfig 子表定义 (按阵营分组嵌套) === 注:本段的数据作用均为推测，战役中似乎不使用，所以我暂时没研究
+
+// 卡牌条目 (FactionCardsConfig.cards 向量元素)
+table CardEntry {
+  card_id:ushort (id: 0);       // 卡牌配置ID
+  count:ushort (id: 1);         // 初始可用数量
+  turn_cooldown:ushort (id: 2); // 冷却回合数
+}
+
+// 阵营卡牌配置 (StageConfig.faction_cards 向量元素)
+table FactionCardsConfig {
+  faction_id:ushort (id: 0); // 阵营ID
+  cards:[CardEntry] (id: 1); // 卡牌列表
+}
+
+// 招募限制条目 (FactionLimitsConfig.limits 向量元素)
+table LimitEntry {
+  unit_id:ushort (id: 0);       // 兵种配置ID
+  max_limit:ushort (id: 1);     // 最大数量上限
+  current_count:ushort (id: 2); // 当前已有数量
+}
+
+// 阵营兵力限制 (StageConfig.faction_limits 向量元素)
+table FactionLimitsConfig {
+  faction_id:ushort (id: 0);  // 阵营ID
+  limits:[LimitEntry] (id: 1); // 限制列表
+}
+
+// 科技升级条目 (TechUpgradeConfig.upgrades 向量元素)
+table TechUpgradeEntry {
+  tech_id:ushort (id: 0); // 科技配置ID
+  level:ushort (id: 1);   // 升级目标等级
+  turn:ushort (id: 2);    // 生效/解锁回合
+}
+
+// 阵营科技升级 (StageConfig.tech_upgrades 向量元素)
+table TechUpgradeConfig {
+  faction_id:ushort (id: 0);          // 阵营ID
+  upgrades:[TechUpgradeEntry] (id: 1); // 升级项列表
+}
+
+// 将领外交关系 (StageConfig.generals_diplomacy 向量元素)
+table GeneralDiplomacyEntry {
+  general_id:ushort (id: 0); // 将领ID
+  status:ubyte (id: 1);      // 外交状态
+  is_active:bool (id: 2);    // 是否激活/出场
+}
+
+// 城市状态实体 (FactionCityStatus.status_list 向量元素)
+table CityStatus {
+  x:ushort (id: 0);     // 城市网格X坐标
+  owner:ushort (id: 1);  // 拥有国ID
+  y:ushort (id: 2);     // 城市网格Y坐标
+  level:ushort (id: 3);  // 初始发展等级
+}
+
+// 阵营城市状态分组 (StageConfig.cities_status 向量元素)
+table FactionCityStatus {
+  faction_id:ushort (id: 0);       // 势力分组ID
+  status_list:[CityStatus] (id: 1); // 城市状态列表
+}
+
+// 港口状态实体 (FactionHarborStatus.status_list 向量元素)
+table HarborStatus {
+  x:ushort (id: 0);     // 港口网格X坐标
+  owner:ushort (id: 1);  // 拥有国ID
+  y:ushort (id: 2);     // 港口网格Y坐标
+  level:ushort (id: 3);  // 初始等级
+}
+
+// 阵营港口状态分组 (StageConfig.harbors_status 向量元素)
+table FactionHarborStatus {
+  faction_id:ushort (id: 0);         // 势力分组ID
+  status_list:[HarborStatus] (id: 1); // 港口状态列表
+}
+
+// 关卡全局配置表
+table StageConfig {
+  faction_cards:[FactionCardsConfig] (id: 0);       // 阵营卡牌配置
+  faction_limits:[FactionLimitsConfig] (id: 1);     // 阵营兵力限制
+  tech_upgrades:[TechUpgradeConfig] (id: 2);        // 科技升级列表
+  generals_diplomacy:[GeneralDiplomacyEntry] (id: 3); // 将领外交关系
+  field_4:ushort (id: 4);                            // 未知用途 (读取后弃用)
+  cities_status:[FactionCityStatus] (id: 5);         // 城市状态覆盖 (按阵营分组)
+  harbors_status:[FactionHarborStatus] (id: 6);      // 港口状态覆盖 (按阵营分组)
+  disabled_skills:[ushort] (id: 7);                  // 禁用技能ID列表
+}
+
+table Decal {
+  decal_type:ubyte (id: 0); // 标记类型,本段待探查
+  x:ushort (id: 1); // 标记X坐标
+  y:ushort (id: 2); // 标记Y坐标
+}
+
+table DecalInfo {
+  decals:[Decal] (id: 0); // 标记列表,本段待探查
+}
+
+table ViewBoundary {
+  boundary_id:ushort (id: 0); // 视图边界ID
+}
+
+table Root {
+  version:ushort (id: 0); // 文件结构版本号 (通常为 1)
+  map_terrain:MapTerrain (id: 1); // 地图地形数据
+  stage_metadata:StageMetadata (id: 2); // 关卡元数据,指向关卡目标和回合限制等条件
+  battle_info:BattleInfo (id: 3); // 战斗信息,指向地图增员点
+  faction_info:FactionInfo (id: 4); // 势力信息,指向本战役的势力
+  trigger_info:TriggerInfo (id: 5); // 触发器信息,指向建筑和工事
+  ai_info:AIInfo (id: 6); // AI信息,指向部队单位
+  region_info:RegionInfo (id: 7); // 区域信息,暂时不知道作用，可能用于地图扩展
+  stage_config:StageConfig (id: 8); // 关卡配置,似乎是征服或者集团军使用的，战役btl都为空
+  decal_info:DecalInfo (id: 9); // 标记信息,暂时不知道作用
+  rle_metadata:[ubyte] (id: 10); // RLE压缩元数据,可能用于征服和集团军等大btl文件的压缩
+  view_boundary:ViewBoundary (id: 11); // 视图边界,似乎在战役btl中为空
+}
+
+root_type Root;

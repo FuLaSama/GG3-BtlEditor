@@ -1,0 +1,143 @@
+@using BtldMapEditor
+
+<div style="font-weight:bold; color:#0284c7; margin-bottom:12px;">[ 关卡全局属性 ]</div>
+
+<div class="form-group-single">
+    <label class="form-label">关卡序号 (StageNum):</label>
+    <input type="number" class="form-input" value="@Stage?.StageMetadata?.StageNum" @onchange="e => SetStageNum(e.Value)" placeholder="空" />
+</div>
+
+<div class="form-group-single">
+    <label class="form-label">版本号 (Version):</label>
+    <input type="number" class="form-input" value="@Stage?.Version" @onchange="e => SetVersion(e.Value)" placeholder="空" />
+</div>
+
+<div class="form-group-single">
+    <label class="form-label">关卡标签 (Tag):</label>
+    <input type="number" class="form-input" value="@Stage?.TriggerInfo?.Tag" @onchange="e => SetTag(e.Value)" placeholder="空" />
+</div>
+
+<hr style="border-color:var(--border-color); margin:15px 0;" />
+
+<div style="font-weight:bold; color:#10b981; margin-bottom:12px;">[ 地图尺寸调整 ]</div>
+
+<div class="form-group-single">
+    <label class="form-label">地图宽度 (Width 格):</label>
+    <input type="number" class="form-input" value="@MapWidth" @onchange="e => MapWidth = ParseUshort(e.Value)" />
+</div>
+
+<div class="form-group-single">
+    <label class="form-label">地图高度 (Height 格):</label>
+    <input type="number" class="form-input" value="@MapHeight" @onchange="e => MapHeight = ParseUshort(e.Value)" />
+</div>
+
+<button class="btn-mobile-action btn-success-action" style="width:100%; margin-top:5px;" @onclick="ResizeMap">调整地图尺寸</button>
+
+<hr style="border-color:var(--border-color); margin:15px 0;" />
+
+<div style="font-weight:bold; color:#eab308; margin-bottom:12px;">[ 胜利条件 / 关卡目标 ]</div>
+
+@if (Stage?.StageMetadata?.Targets != null)
+{
+    @if (Stage.StageMetadata.Targets.Count > 0)
+    {
+        var t1 = Stage.StageMetadata.Targets[0];
+        <div class="form-group-single">
+            <label class="form-label">主要目标 1 类型 (TargetType):</label>
+            <input type="number" class="form-input" value="@t1.TargetType" @onchange="e => t1.TargetType = ParseUshortNullable(e.Value)" placeholder="空" />
+        </div>
+        <div class="form-group-single">
+            <label class="form-label">主要目标 1 数值 (TargetValue):</label>
+            <input type="number" class="form-input" value="@t1.TargetValue" @onchange="e => t1.TargetValue = ParseShortNullable(e.Value)" placeholder="空" />
+        </div>
+    }
+
+    @if (Stage.StageMetadata.Targets.Count > 1)
+    {
+        var t2 = Stage.StageMetadata.Targets[1];
+        <div class="form-group-single">
+            <label class="form-label">次要目标 2 类型 (TargetType):</label>
+            <input type="number" class="form-input" value="@t2.TargetType" @onchange="e => t2.TargetType = ParseUshortNullable(e.Value)" placeholder="空" />
+        </div>
+        <div class="form-group-single">
+            <label class="form-label">次要目标 2 数值 (TargetValue):</label>
+            <input type="number" class="form-input" value="@t2.TargetValue" @onchange="e => t2.TargetValue = ParseShortNullable(e.Value)" placeholder="空" />
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public StageModel? Stage { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    public ushort MapWidth { get; set; } = 30;
+    public ushort MapHeight { get; set; } = 30;
+
+    protected override void OnParametersSet()
+    {
+        if (Stage?.MapTerrain?.Size != null)
+        {
+            MapWidth = Stage.MapTerrain.Size.Width;
+            MapHeight = Stage.MapTerrain.Size.Height;
+        }
+    }
+
+    private void SetStageNum(object? val)
+    {
+        if (Stage?.StageMetadata == null) return;
+        Stage.StageMetadata.StageNum = ushort.TryParse(val?.ToString(), out ushort res) ? res : (ushort)0;
+        OnChanged.InvokeAsync();
+    }
+
+    private void SetVersion(object? val)
+    {
+        if (Stage == null) return;
+        Stage.Version = ushort.TryParse(val?.ToString(), out ushort res) ? res : (ushort)0;
+        OnChanged.InvokeAsync();
+    }
+
+    private void SetTag(object? val)
+    {
+        if (Stage?.TriggerInfo == null) return;
+        Stage.TriggerInfo.Tag = short.TryParse(val?.ToString(), out short res) ? res : (short)0;
+        OnChanged.InvokeAsync();
+    }
+
+    private async Task ResizeMap()
+    {
+        if (Stage?.MapTerrain?.Size == null || Stage.MapTerrain.Tiles == null) return;
+        ushort oldW = Stage.MapTerrain.Size.Width;
+        ushort oldH = Stage.MapTerrain.Size.Height;
+
+        if (MapWidth == oldW && MapHeight == oldH) return;
+
+        var oldTiles = Stage.MapTerrain.Tiles;
+        var newTiles = new List<ushort>();
+
+        for (int y = 0; y < MapHeight; y++)
+        {
+            for (int x = 0; x < MapWidth; x++)
+            {
+                if (x < oldW && y < oldH)
+                {
+                    int oldIdx = y * oldW + x;
+                    newTiles.Add(oldTiles[oldIdx]);
+                }
+                else
+                {
+                    newTiles.Add(0x0100); // BaseTerrain 1, Variation 0
+                }
+            }
+        }
+
+        Stage.MapTerrain.Size.Width = MapWidth;
+        Stage.MapTerrain.Size.Height = MapHeight;
+        Stage.MapTerrain.Tiles = newTiles;
+
+        await OnChanged.InvokeAsync();
+    }
+
+    private ushort ParseUshort(object? val) => ushort.TryParse(val?.ToString(), out ushort res) ? res : (ushort)30;
+    private ushort? ParseUshortNullable(object? val) => ushort.TryParse(val?.ToString(), out ushort res) ? res : null;
+    private short? ParseShortNullable(object? val) => short.TryParse(val?.ToString(), out short res) ? res : null;
+}

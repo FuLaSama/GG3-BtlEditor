@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net8.0-android</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+  </PropertyGroup>
+  
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="AvaloniaUI.DiagnosticsSupport">
+      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
+      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+  </ItemGroup>
+
+  <!-- Conditional platform package references -->
+  <ItemGroup Condition="$(TargetFramework.Contains('android'))">
+    <PackageReference Include="Avalonia.Android" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\BtlCore.old\BtlCore.old.csproj" />
+  </ItemGroup>
+
+  <!-- Workaround for Android/NativeAOT where build system bypasses IntermediateAssembly redirect -->
+  <Target Name="ForceOverwriteIntermediateAssembly" AfterTargets="CompileAvaloniaXaml" Condition="Exists('$(IntermediateOutputPath)Avalonia\$(TargetName)$(TargetExt)')">
+    <Message Importance="high" Text="Force overwriting intermediate assembly with Avalonia compiled XAML assembly..." />
+    <Copy SourceFiles="$(IntermediateOutputPath)Avalonia\$(TargetName)$(TargetExt)" DestinationFiles="$(IntermediateOutputPath)$(TargetName)$(TargetExt)" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" />
+    <Copy SourceFiles="$(IntermediateOutputPath)Avalonia\$(TargetName).pdb" DestinationFiles="$(IntermediateOutputPath)$(TargetName).pdb" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" Condition="Exists('$(IntermediateOutputPath)Avalonia\$(TargetName).pdb')" />
+  </Target>
+</Project>

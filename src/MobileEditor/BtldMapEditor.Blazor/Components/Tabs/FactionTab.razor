@@ -1,0 +1,221 @@
+@using BtldMapEditor
+
+<div style="font-weight:bold; color:#0284c7; margin-bottom:10px;">[ 势力列表 ]</div>
+
+<div style="display:flex; gap:10px; margin-bottom:12px;">
+    <div style="flex:1; max-height:160px; overflow-y:auto; background:#0f172a; border:1px solid #334155; border-radius:6px; padding:6px;">
+        @if (Stage?.FactionInfo?.Factions != null)
+        {
+            @for (int i = 0; i < Stage.FactionInfo.Factions.Count; i++)
+            {
+                int idx = i;
+                var f = Stage.FactionInfo.Factions[i];
+                ushort fId = f.Info?.FactionId ?? 0;
+                ushort cId = f.Info?.CountryId ?? 0;
+                string cName = GameSettings.GetCountryName(cId);
+                bool isSelected = (idx == SelectedFactionIdx);
+
+                <div class="list-box-item @(isSelected ? "selected" : "")" @onclick="() => SelectFaction(idx)">
+                    🏳️ @fId: @cName
+                </div>
+            }
+        }
+    </div>
+    <div style="display:flex; flex-direction:column; justify-content:center; gap:10px;">
+        <button class="btn-order-arrow" @onclick="MoveFactionUp" title="上移势力顺序">▲</button>
+        <button class="btn-order-arrow" @onclick="MoveFactionDown" title="下移势力顺序">▼</button>
+    </div>
+</div>
+
+<div style="display:flex; gap:10px; margin-bottom:15px;">
+    <button class="btn-mobile-action btn-primary-action" style="flex:1;" @onclick="AddFaction">添加势力</button>
+    <button class="btn-mobile-action btn-danger-action" style="flex:1;" @onclick="DeleteFaction">删除势力</button>
+</div>
+
+@if (CurrentFaction?.Info != null)
+{
+    var info = CurrentFaction.Info;
+
+    <div style="font-weight:bold; color:#0284c7; margin-bottom:10px;">[ 势力详细属性 ]</div>
+
+    <div class="form-group-single">
+        <label class="form-label">势力 ID:</label>
+        <input type="number" class="form-input" value="@info.FactionId" @onchange="e => info.FactionId = ParseUshort(e.Value)" placeholder="空" />
+    </div>
+
+    <div class="form-group-single">
+        <label class="form-label">所属阵营 (Camp: 0=中立, 1=盟友):</label>
+        <input type="number" class="form-input" value="@info.Camp" @onchange="e => info.Camp = ParseByteNullable(e.Value)" placeholder="空" />
+    </div>
+
+    <div class="form-group-single">
+        <label class="form-label">AI 托管状态 (IsAI: 0/1):</label>
+        <input type="number" class="form-input" value="@info.IsAI" @onchange="e => info.IsAI = ParseByteNullable(e.Value)" placeholder="空" />
+    </div>
+
+    <div class="form-group-single">
+        <label class="form-label">初始金币 (InitialGold):</label>
+        <input type="number" class="form-input" value="@info.InitialGold" @onchange="e => info.InitialGold = ParseUintNullable(e.Value)" placeholder="空" />
+    </div>
+
+    <div class="form-group-single">
+        <label class="form-label">初始科技 (InitialTech):</label>
+        <input type="number" class="form-input" value="@info.InitialTech" @onchange="e => info.InitialTech = ParseUintNullable(e.Value)" placeholder="空" />
+    </div>
+
+    <div class="form-group-single">
+        <label class="form-label">收入倍率 (IncomeModifier):</label>
+        <input type="number" step="0.1" class="form-input" value="@info.IncomeModifier" @onchange="e => info.IncomeModifier = ParseFloatNullable(e.Value)" placeholder="1.0" />
+    </div>
+
+    <div class="form-group-single">
+        <label class="form-label">伤害倍率 (DamageModifier):</label>
+        <input type="number" step="0.1" class="form-input" value="@info.DamageModifier" @onchange="e => info.DamageModifier = ParseFloatNullable(e.Value)" placeholder="1.0" />
+    </div>
+}
+
+@code {
+    [Parameter] public StageModel? Stage { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    public int SelectedFactionIdx { get; set; } = 0;
+
+    private FactionModel? CurrentFaction
+    {
+        get
+        {
+            if (Stage?.FactionInfo?.Factions != null && SelectedFactionIdx >= 0 && SelectedFactionIdx < Stage.FactionInfo.Factions.Count)
+            {
+                return Stage.FactionInfo.Factions[SelectedFactionIdx];
+            }
+            return null;
+        }
+    }
+
+    private void SelectFaction(int idx)
+    {
+        SelectedFactionIdx = idx;
+    }
+
+    private async Task MoveFactionUp()
+    {
+        if (Stage?.FactionInfo?.Factions == null) return;
+        int oldIdx = SelectedFactionIdx;
+        if (oldIdx <= 0 || oldIdx >= Stage.FactionInfo.Factions.Count) return;
+
+        int newIdx = oldIdx - 1;
+        var faction = Stage.FactionInfo.Factions[oldIdx];
+        Stage.FactionInfo.Factions.RemoveAt(oldIdx);
+        Stage.FactionInfo.Factions.Insert(newIdx, faction);
+
+        // Keep FactionCards and FactionLimits in sync
+        if (Stage.FactionInfo.FactionCards != null && faction.Info != null)
+        {
+            var cardEntry = Stage.FactionInfo.FactionCards.FirstOrDefault(fc => fc.FactionId == faction.Info.FactionId);
+            if (cardEntry != null)
+            {
+                Stage.FactionInfo.FactionCards.Remove(cardEntry);
+                int targetIdx = Math.Min(newIdx, Stage.FactionInfo.FactionCards.Count);
+                Stage.FactionInfo.FactionCards.Insert(targetIdx, cardEntry);
+            }
+        }
+
+        if (Stage.FactionInfo.FactionLimits != null && faction.Info != null)
+        {
+            var limitEntry = Stage.FactionInfo.FactionLimits.FirstOrDefault(fl => fl.FactionId == faction.Info.FactionId);
+            if (limitEntry != null)
+            {
+                Stage.FactionInfo.FactionLimits.Remove(limitEntry);
+                int targetIdx = Math.Min(newIdx, Stage.FactionInfo.FactionLimits.Count);
+                Stage.FactionInfo.FactionLimits.Insert(targetIdx, limitEntry);
+            }
+        }
+
+        SelectedFactionIdx = newIdx;
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task MoveFactionDown()
+    {
+        if (Stage?.FactionInfo?.Factions == null) return;
+        int oldIdx = SelectedFactionIdx;
+        if (oldIdx < 0 || oldIdx >= Stage.FactionInfo.Factions.Count - 1) return;
+
+        int newIdx = oldIdx + 1;
+        var faction = Stage.FactionInfo.Factions[oldIdx];
+        Stage.FactionInfo.Factions.RemoveAt(oldIdx);
+        Stage.FactionInfo.Factions.Insert(newIdx, faction);
+
+        // Keep FactionCards and FactionLimits in sync
+        if (Stage.FactionInfo.FactionCards != null && faction.Info != null)
+        {
+            var cardEntry = Stage.FactionInfo.FactionCards.FirstOrDefault(fc => fc.FactionId == faction.Info.FactionId);
+            if (cardEntry != null)
+            {
+                Stage.FactionInfo.FactionCards.Remove(cardEntry);
+                int targetIdx = Math.Min(newIdx, Stage.FactionInfo.FactionCards.Count);
+                Stage.FactionInfo.FactionCards.Insert(targetIdx, cardEntry);
+            }
+        }
+
+        if (Stage.FactionInfo.FactionLimits != null && faction.Info != null)
+        {
+            var limitEntry = Stage.FactionInfo.FactionLimits.FirstOrDefault(fl => fl.FactionId == faction.Info.FactionId);
+            if (limitEntry != null)
+            {
+                Stage.FactionInfo.FactionLimits.Remove(limitEntry);
+                int targetIdx = Math.Min(newIdx, Stage.FactionInfo.FactionLimits.Count);
+                Stage.FactionInfo.FactionLimits.Insert(targetIdx, limitEntry);
+            }
+        }
+
+        SelectedFactionIdx = newIdx;
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task AddFaction()
+    {
+        if (Stage == null) return;
+        if (Stage.FactionInfo == null) Stage.FactionInfo = new FactionInfoModel();
+        if (Stage.FactionInfo.Factions == null) Stage.FactionInfo.Factions = new List<FactionModel>();
+
+        ushort newId = 1;
+        if (Stage.FactionInfo.Factions.Count > 0)
+        {
+            newId = (ushort)(Stage.FactionInfo.Factions.Max(f => f.Info?.FactionId ?? 0) + 1);
+        }
+
+        var newFaction = new FactionModel
+        {
+            Info = new FactionMetadataModel
+            {
+                FactionId = newId,
+                CountryId = 0,
+                Camp = null,
+                IsAI = null,
+                InitialGold = null,
+                InitialTech = null
+            }
+        };
+
+        Stage.FactionInfo.Factions.Add(newFaction);
+        SelectedFactionIdx = Stage.FactionInfo.Factions.Count - 1;
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task DeleteFaction()
+    {
+        if (Stage?.FactionInfo?.Factions == null) return;
+        if (SelectedFactionIdx >= 0 && SelectedFactionIdx < Stage.FactionInfo.Factions.Count)
+        {
+            Stage.FactionInfo.Factions.RemoveAt(SelectedFactionIdx);
+            SelectedFactionIdx = Math.Max(0, SelectedFactionIdx - 1);
+            await OnChanged.InvokeAsync();
+        }
+    }
+
+    private ushort ParseUshort(object? val) => ushort.TryParse(val?.ToString(), out ushort res) ? res : (ushort)0;
+    private byte? ParseByteNullable(object? val) => byte.TryParse(val?.ToString(), out byte res) ? res : null;
+    private uint? ParseUintNullable(object? val) => uint.TryParse(val?.ToString(), out uint res) ? res : null;
+    private float? ParseFloatNullable(object? val) => float.TryParse(val?.ToString(), out float res) ? res : null;
+}

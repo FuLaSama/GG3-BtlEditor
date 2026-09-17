@@ -1,0 +1,98 @@
+@using BtldMapEditor
+
+@if (SelectedCell != null)
+{
+    int baseTerrain = SelectedCell.Terrain >> 8;
+    int variation = SelectedCell.Terrain & 0xFF;
+
+    <div class="form-group-single">
+        <label class="form-label">基础地形 (Base Terrain):</label>
+        <select class="form-input" value="@baseTerrain" @onchange="OnBaseTerrainChanged">
+            <option value="0">0: 海洋/水域 (Ocean)</option>
+            <option value="1">1: 平原 (Plains)</option>
+            <option value="2">2: 沙漠 (Desert)</option>
+            <option value="3">3: 高山 (Mountain)</option>
+            <option value="4">4: 森林 (Forest)</option>
+            <option value="5">5: 丘陵 (Hills)</option>
+        </select>
+    </div>
+
+    <div class="form-group-single">
+        <label class="form-label">地形变体 (Variation):</label>
+        <input type="number" class="form-input" value="@variation" @onchange="OnVariationChanged" placeholder="0" />
+    </div>
+
+    <hr style="border-color:var(--border-color); margin:15px 0;" />
+
+    <div style="font-weight:bold; color:#38bdf8; margin-bottom:10px;">[ 地貌饰品 / Slot 插槽配置 ]</div>
+
+    <!-- Slot 1 -->
+    <div style="background:#0f172a; padding:10px; border-radius:6px; margin-bottom:10px; border:1px solid #334155;">
+        <div class="form-group-single" style="flex-direction:row; gap:10px; align-items:center;">
+            <input type="checkbox" id="chkSlot1" checked="@(SelectedCell.Attr != null)" @onchange="ToggleSlot1" style="width:18px; height:18px;" />
+            <label for="chkSlot1" class="form-label" style="margin:0; font-weight:bold;">启用插槽 1 (Slot 1)</label>
+        </div>
+        @if (SelectedCell.Attr != null)
+        {
+            <div class="form-group-single">
+                <label class="form-label">饰品 ID (Byte0):</label>
+                <input type="number" class="form-input" value="@SelectedCell.Attr.Byte0" @onchange="e => SelectedCell.Attr.Byte0 = (sbyte)ParseByte(e.Value)" placeholder="空" />
+            </div>
+            <div class="form-group-single">
+                <label class="form-label">数值 (Byte1):</label>
+                <input type="number" class="form-input" value="@SelectedCell.Attr.Byte1" @onchange="e => SelectedCell.Attr.Byte1 = (sbyte)ParseByte(e.Value)" placeholder="空" />
+            </div>
+            <div class="form-group-single">
+                <label class="form-label">Dx 偏移 (Byte2):</label>
+                <input type="number" class="form-input" value="@SelectedCell.Attr.Byte2" @onchange="e => SelectedCell.Attr.Byte2 = (sbyte)ParseSByte(e.Value)" placeholder="空" />
+            </div>
+            <div class="form-group-single">
+                <label class="form-label">Dy 偏移 (Byte3):</label>
+                <input type="number" class="form-input" value="@SelectedCell.Attr.Byte3" @onchange="e => SelectedCell.Attr.Byte3 = (sbyte)ParseSByte(e.Value)" placeholder="空" />
+            </div>
+        }
+    </div>
+}
+else
+{
+    <div style="color:var(--text-muted); text-align:center; padding:20px;">请在地图上点击选择一个六角格地块</div>
+}
+
+@code {
+    [Parameter] public CellItem? SelectedCell { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private async Task OnBaseTerrainChanged(ChangeEventArgs e)
+    {
+        if (SelectedCell == null) return;
+        if (int.TryParse(e.Value?.ToString(), out int val))
+        {
+            int variation = SelectedCell.Terrain & 0xFF;
+            SelectedCell.Terrain = (ushort)((val << 8) | variation);
+            await OnChanged.InvokeAsync();
+        }
+    }
+
+    private async Task OnVariationChanged(ChangeEventArgs e)
+    {
+        if (SelectedCell == null) return;
+        if (int.TryParse(e.Value?.ToString(), out int val))
+        {
+            int baseT = SelectedCell.Terrain >> 8;
+            SelectedCell.Terrain = (ushort)((baseT << 8) | (val & 0xFF));
+            await OnChanged.InvokeAsync();
+        }
+    }
+
+    private async Task ToggleSlot1(ChangeEventArgs e)
+    {
+        if (SelectedCell == null) return;
+        bool isChecked = (bool)(e.Value ?? false);
+        if (isChecked) SelectedCell.Attr = new TileAttrModel { Byte0 = 0, Byte1 = 0, Byte2 = 0, Byte3 = 0 };
+        else SelectedCell.Attr = null;
+        await OnChanged.InvokeAsync();
+    }
+
+    private int ParseByte(object? val) => int.TryParse(val?.ToString(), out int res) ? Math.Clamp(res, 0, 255) : 0;
+    private int ParseSByte(object? val) => int.TryParse(val?.ToString(), out int res) ? Math.Clamp(res, -128, 127) : 0;
+}

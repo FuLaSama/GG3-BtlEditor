@@ -1,0 +1,643 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:local="using:BtldMapEditor.Mobile.Views"
+             mc:Ignorable="d" d:DesignWidth="1024" d:DesignHeight="700"
+             x:Class="BtldMapEditor.Mobile.Views.MainView">
+
+    <Panel>
+        <Grid RowDefinitions="Auto, *">
+            <!-- 1. 顶部操作栏 -->
+            <Border Grid.Row="0" Background="#f1f5f9" BorderBrush="#cbd5e1" BorderThickness="0,0,0,1" Padding="8">
+                <Grid ColumnDefinitions="*, Auto">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+                        <Button Name="btnOpen" Content="打开" Width="85" Height="42" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Background="#0284c7" Foreground="White" CornerRadius="4"/>
+                        <Button Name="btnSave" Content="保存" Width="85" Height="42" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Background="#16a34a" Foreground="White" CornerRadius="4"/>
+                        <Separator Classes="vertical" Width="1" Margin="5,0"/>
+                        <TextBlock VerticalAlignment="Center" Text="视图模式: " FontWeight="Bold"/>
+                        <ComboBox Name="cbRenderMode" Width="130" SelectedIndex="0">
+                            <ComboBoxItem>全部显示</ComboBoxItem>
+                            <ComboBoxItem>仅显示地形</ComboBoxItem>
+                            <ComboBoxItem>仅显示部队</ComboBoxItem>
+                            <ComboBoxItem>仅显示建筑</ComboBoxItem>
+                            <ComboBoxItem>仅显示工事</ComboBoxItem>
+                            <ComboBoxItem>仅显示地物</ComboBoxItem>
+                            <ComboBoxItem>仅增兵点</ComboBoxItem>
+                        </ComboBox>
+                        <CheckBox Name="chkBrushMode" Content="画笔连续染色" VerticalAlignment="Center"/>
+                        <TextBlock VerticalAlignment="Center" Name="txtMapSize" Text="地图未加载" Margin="10,0" Foreground="#475569"/>
+                    </StackPanel>
+                    
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                        <Button Name="btnCopy" Content="复制" Width="85" Height="42" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Background="#4f46e5" Foreground="White" CornerRadius="4"/>
+                        <Button Name="btnPaste" Content="粘贴" Width="85" Height="42" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Background="#7c3aed" Foreground="White" CornerRadius="4"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+        <!-- 2. 主编辑器区 -->
+        <Grid Grid.Row="1" ColumnDefinitions="*, 360">
+            <!-- 左侧：六角网格地图 (支持触控滑动) -->
+            <!-- 左侧：地图 (支持大图滑动与空白状态提示) -->
+            <Grid Grid.Column="0">
+                <ScrollViewer Name="mapScrollViewer" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Background="#f8fafc">
+                    <local:HexMapCanvas Name="mapCanvas" HorizontalAlignment="Left" VerticalAlignment="Top"/>
+                </ScrollViewer>
+                
+                <!-- 空白状态时的文本介绍占位 (纯文本，无卡片、无表情、无边框) -->
+                <ScrollViewer Name="welcomeOverlay" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Background="#f8fafc">
+                    <StackPanel Margin="30" Spacing="12" HorizontalAlignment="Left" VerticalAlignment="Top" MaxWidth="650">
+                        <TextBlock Text="《将军的荣耀3》手机版地图编辑器" FontSize="20" FontWeight="Bold" Foreground="#1e293b"/>
+                        <TextBlock Text="版本: 0.1.0" FontSize="14" Foreground="#475569"/>
+                        <TextBlock Text="更新日志: 无" FontSize="14" TextWrapping="Wrap" Foreground="#475569"/>
+                        
+                        <Separator Height="1" Background="#cbd5e1" Margin="0,10"/>
+                        
+                        <TextBlock Text="使用说明:" FontSize="15" FontWeight="SemiBold" Foreground="#334155"/>
+                        <TextBlock Text="· 点击左上角“打开”按钮，选择并加载 BTL 格式关卡文件或 JSON 格式关卡文件。" FontSize="14" TextWrapping="Wrap" Foreground="#475569"/>
+                        <TextBlock Text="· 点击左上角“保存”按钮，可将当前关卡导出为 BTL / JSON 格式。" FontSize="14" TextWrapping="Wrap" Foreground="#475569"/>
+                        <TextBlock Text="· 加载关卡后，可在右侧侧边栏中修改地形、部队、建筑、阵营与全局配置。" FontSize="14" TextWrapping="Wrap" Foreground="#475569"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+
+            <!-- 右侧：属性编辑栏 -->
+            <Border Grid.Column="1" BorderBrush="#cbd5e1" BorderThickness="1,0,0,0" Background="White">
+                <TabControl Name="tabSidebar" Margin="5">
+                    
+                    <!-- 标签 1: 地形 -->
+                    <TabItem Header="地形" FontSize="13">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel Margin="10" Spacing="10">
+                                <TextBlock Text="[ 地块位置 ]" FontWeight="Bold" Foreground="#0284c7"/>
+                                <TextBlock Name="lblCellCoords" Text="坐标: 未选择" FontSize="14" FontWeight="SemiBold"/>
+
+                                <TextBlock Text="基础地质:"/>
+                                <Grid ColumnDefinitions="*, Auto">
+                                    <NumericUpDown Name="nudBaseTerrain" Minimum="0" Maximum="255" FormatString="F0" Watermark="空"/>
+                                    <TextBlock Grid.Column="1" Name="lblBaseTerrainName" Text="地质名称: --" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="DarkBlue"/>
+                                </Grid>
+
+                                <TextBlock Text="贴图变体:"/>
+                                <NumericUpDown Name="nudVariation" Minimum="0" Maximum="31" FormatString="F0" Watermark="空"/>
+
+                                <CheckBox Name="chkPlayableFlag" Content="是否为可玩地块"/>
+                                <CheckBox Name="chkOceanFlag" Content="是否为海洋"/>
+
+                                <Separator Height="1" Background="#e2e8f0" Margin="0,5"/>
+                                <TextBlock Text="[ 插槽配置 ]" FontWeight="Bold" Foreground="#0284c7"/>
+                                
+                                <!-- 插槽 1 -->
+                                <CheckBox Name="chkSlot1" Content="开启插槽 1 (地物/装饰)"/>
+                                <StackPanel Name="panelSlot1" Spacing="5" Margin="15,0,0,0">
+                                    <TextBlock Name="lblSlot1Name" Text="当前地物: --" Foreground="Gray"/>
+                                    <Grid ColumnDefinitions="Auto, *">
+                                        <TextBlock Text="地物 ID: " VerticalAlignment="Center"/>
+                                        <NumericUpDown Grid.Column="1" Name="nudSlot1Id" Minimum="-128" Maximum="127" FormatString="F0" Watermark="空"/>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="Auto, *">
+                                        <TextBlock Text="贴图变种: " VerticalAlignment="Center"/>
+                                        <NumericUpDown Grid.Column="1" Name="nudSlot1Val" Minimum="-128" Maximum="127" FormatString="F0" Watermark="空"/>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="*, *">
+                                        <Grid ColumnDefinitions="Auto, *">
+                                            <TextBlock Text="Dx: " VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                            <NumericUpDown Grid.Column="1" Name="nudSlot1Dx" Minimum="-128" Maximum="127" FormatString="F0" Watermark="空"/>
+                                        </Grid>
+                                        <Grid Grid.Column="1" ColumnDefinitions="Auto, *" Margin="10,0,0,0">
+                                            <TextBlock Text="Dy: " VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                            <NumericUpDown Grid.Column="1" Name="nudSlot1Dy" Minimum="-128" Maximum="127" FormatString="F0" Watermark="空"/>
+                                        </Grid>
+                                    </Grid>
+                                </StackPanel>
+
+                                <!-- 插槽 2 -->
+                                <CheckBox Name="chkSlot2" Content="开启插槽 2 (主地形)"/>
+                                <StackPanel Name="panelSlot2" Spacing="5" Margin="15,0,0,0">
+                                    <TextBlock Name="lblSlot2Name" Text="当前地物: --" Foreground="Gray"/>
+                                    <Grid ColumnDefinitions="Auto, *">
+                                        <TextBlock Text="地物 ID: " VerticalAlignment="Center"/>
+                                        <NumericUpDown Grid.Column="1" Name="nudSlot2Id" Minimum="-128" Maximum="127" FormatString="F0" Watermark="空"/>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="Auto, *">
+                                        <TextBlock Text="贴图变种: " VerticalAlignment="Center"/>
+                                        <NumericUpDown Grid.Column="1" Name="nudSlot2Val" Minimum="-128" Maximum="127" FormatString="F0" Watermark="空"/>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="*, *">
+                                        <Grid ColumnDefinitions="Auto, *">
+                                            <TextBlock Text="Dx: " VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                            <NumericUpDown Grid.Column="1" Name="nudSlot2Dx" Minimum="-128" Maximum="127" FormatString="F0" Watermark="空"/>
+                                        </Grid>
+                                        <Grid Grid.Column="1" ColumnDefinitions="Auto, *" Margin="10,0,0,0">
+                                            <TextBlock Text="Dy: " VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                            <NumericUpDown Grid.Column="1" Name="nudSlot2Dy" Minimum="-128" Maximum="127" FormatString="F0" Watermark="空"/>
+                                        </Grid>
+                                    </Grid>
+                                </StackPanel>
+
+                                <!-- 插槽 3 -->
+                                <CheckBox Name="chkSlot3" Content="开启插槽 3 (次地形)"/>
+                                <StackPanel Name="panelSlot3" Spacing="5" Margin="15,0,0,0">
+                                    <TextBlock Name="lblSlot3Name" Text="当前地物: --" Foreground="Gray"/>
+                                    <Grid ColumnDefinitions="Auto, *">
+                                        <TextBlock Text="地物 ID: " VerticalAlignment="Center"/>
+                                        <NumericUpDown Grid.Column="1" Name="nudSlot3Id" Minimum="-128" Maximum="127" FormatString="F0" Watermark="空"/>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="Auto, *">
+                                        <TextBlock Text="贴图变种: " VerticalAlignment="Center"/>
+                                        <NumericUpDown Grid.Column="1" Name="nudSlot3Val" Minimum="-128" Maximum="127" FormatString="F0" Watermark="空"/>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="*, *">
+                                        <Grid ColumnDefinitions="Auto, *">
+                                            <TextBlock Text="Dx: " VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                            <NumericUpDown Grid.Column="1" Name="nudSlot3Dx" Minimum="-128" Maximum="127" FormatString="F0" Watermark="空"/>
+                                        </Grid>
+                                        <Grid Grid.Column="1" ColumnDefinitions="Auto, *" Margin="10,0,0,0">
+                                            <TextBlock Text="Dy: " VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                            <NumericUpDown Grid.Column="1" Name="nudSlot3Dy" Minimum="-128" Maximum="127" FormatString="F0" Watermark="空"/>
+                                        </Grid>
+                                    </Grid>
+                                </StackPanel>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
+
+                    <!-- 标签 2: 部队 -->
+                                        <!-- 标签 2: 部队修改 -->
+                    <TabItem Header="部队修改" FontSize="13">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel Margin="10" Spacing="10">
+                                <CheckBox Name="chkHasUnit" Content="在此地块部署部队"/>
+                                <StackPanel Name="panelUnit" Spacing="10" Margin="5,0,0,0">
+                                    <!-- 1. 兵种类型 ID + 删除部队 -->
+                                    <TextBlock Text="兵种类型 ID:"/>
+                                    <Grid ColumnDefinitions="*, Auto">
+                                        <NumericUpDown Name="nudUnitId" Minimum="-1" Maximum="65535" FormatString="F0" Watermark="空"/>
+                                        <Button Grid.Column="1" Name="btnDeleteUnit" Content="删除部队" Margin="10,0,0,0"/>
+                                    </Grid>
+                                    
+                                    <!-- 2. 兵种名称 -->
+                                    <TextBlock Name="lblUnitName" Text="兵种名称: --" Foreground="DarkGreen" FontWeight="Bold"/>
+
+                                    <!-- 3. 归属势力 / 部队ID -->
+                                    <TextBlock Text="归属势力 / 部队ID:"/>
+                                    <Grid ColumnDefinitions="*, *">
+                                        <NumericUpDown Name="nudUnitFaction" Minimum="-1" Maximum="65535" FormatString="F0" Watermark="空" Margin="0,0,5,0"/>
+                                        <NumericUpDown Grid.Column="1" Name="nudUnitAgentId" Minimum="-1" Maximum="65535" FormatString="F0" Watermark="空" Margin="5,0,0,0"/>
+                                    </Grid>
+
+                                    <!-- 4. 当前/最大生命值 -->
+                                    <TextBlock Text="当前/最大生命值:"/>
+                                    <Grid ColumnDefinitions="*, *">
+                                        <NumericUpDown Name="nudUnitHp" Minimum="-1" Maximum="65535" FormatString="F0" Watermark="空" Margin="0,0,5,0"/>
+                                        <NumericUpDown Grid.Column="1" Name="nudUnitMaxHp" Minimum="-1" Maximum="65535" FormatString="F0" Watermark="空" Margin="5,0,0,0"/>
+                                    </Grid>
+
+                                    <!-- 5. 堆叠编制 / 经验等级 -->
+                                    <TextBlock Text="堆叠编制 / 经验等级:"/>
+                                    <Grid ColumnDefinitions="*, *">
+                                        <NumericUpDown Name="nudUnitStack" Minimum="-1" Maximum="255" FormatString="F0" Watermark="空" Margin="0,0,5,0"/>
+                                        <NumericUpDown Grid.Column="1" Name="nudUnitLevel" Minimum="-1" Maximum="255" FormatString="F0" Watermark="空" Margin="5,0,0,0"/>
+                                    </Grid>
+
+                                    <!-- 6. 关键目标 / 初始士气 -->
+                                    <TextBlock Text="关键目标 / 初始士气:"/>
+                                    <Grid ColumnDefinitions="*, *">
+                                        <NumericUpDown Name="nudUnitAiTarget" Minimum="-1" Maximum="255" FormatString="F0" Watermark="空" Margin="0,0,5,0"/>
+                                        <NumericUpDown Grid.Column="1" Name="nudUnitPlayMode" Minimum="-1" Maximum="255" FormatString="F0" Watermark="空" Margin="5,0,0,0"/>
+                                    </Grid>
+
+                                    <!-- 7. 修饰势力 / 部队移动力 -->
+                                    <TextBlock Text="修饰势力 / 部队移动力:"/>
+                                    <Grid ColumnDefinitions="*, *">
+                                        <NumericUpDown Name="nudUnitFactionExtra" Minimum="-1" Maximum="255" FormatString="F0" Watermark="空" Margin="0,0,5,0"/>
+                                        <NumericUpDown Grid.Column="1" Name="nudUnitMobility" Minimum="-1" Maximum="255" FormatString="F0" Watermark="空" Margin="5,0,0,0"/>
+                                    </Grid>
+
+                                    <!-- 8. 部队朝向 / 参数 8 -->
+                                    <TextBlock Text="部队朝向 / 参数 8:"/>
+                                    <Grid ColumnDefinitions="*, *">
+                                        <NumericUpDown Name="nudUnitDirection" Minimum="-1" Maximum="5" FormatString="F0" Watermark="空" Margin="0,0,5,0"/>
+                                        <NumericUpDown Grid.Column="1" Name="nudUnitVal8" Minimum="-1" Maximum="65535" FormatString="F0" Watermark="空" Margin="5,0,0,0"/>
+                                    </Grid>
+
+                                    <!-- 9. 参数 9 -->
+                                    <TextBlock Text="参数 9:"/>
+                                    <NumericUpDown Name="nudUnitVal9" Minimum="-1" Maximum="65535" FormatString="F0" Watermark="空"/>
+
+                                    <Separator Height="1" Background="#e2e8f0" Margin="0,5"/>
+                                    
+                                    <!-- 部队AI行为 -->
+                                    <TextBlock Text="部队AI行为" FontWeight="Bold" Foreground="#334155"/>
+                                    <CheckBox Name="chkUnitBehavior" Content="启用附加 AI 行为树"/>
+                                    <StackPanel Name="panelUnitBehavior" Spacing="8" Margin="15,0,0,0">
+                                        <TextBlock Text="参数 0:"/>
+                                        <NumericUpDown Name="nudUnitBehaviorField0" Minimum="-1" Maximum="255" FormatString="F0" Watermark="空"/>
+
+                                        <TextBlock Text="参数 1:"/>
+                                        <NumericUpDown Name="nudUnitBehaviorId" Minimum="-1" Maximum="65535" FormatString="F0" Watermark="空"/>
+
+                                        <TextBlock Text="参数 2:"/>
+                                        <NumericUpDown Name="nudUnitBehaviorField2" Minimum="-32769" Maximum="32767" FormatString="F0" Watermark="空"/>
+
+                                        <TextBlock Text="参数 3:"/>
+                                        <NumericUpDown Name="nudUnitBehaviorRadius" Minimum="-1" Maximum="255" FormatString="F0" Watermark="空"/>
+
+                                        <TextBlock Text="参数 4:"/>
+                                        <NumericUpDown Name="nudUnitBehaviorField4" Minimum="-1" Maximum="255" FormatString="F0" Watermark="空"/>
+
+                                        <TextBlock Text="参数 5:"/>
+                                        <NumericUpDown Name="nudUnitBehaviorCenter" Minimum="-1" Maximum="65535" FormatString="F0" Watermark="空"/>
+
+                                        <TextBlock Text="参数 6:"/>
+                                        <NumericUpDown Name="nudUnitBehaviorField6" Minimum="-32769" Maximum="32767" FormatString="F0" Watermark="空"/>
+                                    </StackPanel>
+
+                                    <Separator Height="1" Background="#e2e8f0" Margin="0,5"/>
+
+                                    <!-- 将领配置 -->
+                                    <TextBlock Text="将领配置" FontWeight="Bold" Foreground="#334155"/>
+                                    <CheckBox Name="chkUnitGeneral" Content="启用将领配置"/>
+                                    <StackPanel Name="panelUnitGeneral" Spacing="8" Margin="15,0,0,0">
+                                        <TextBlock Text="附加将领 ID:"/>
+                                        <Grid ColumnDefinitions="*, Auto">
+                                            <NumericUpDown Name="nudUnitGeneralId" Minimum="0" Maximum="65535" FormatString="F0" Watermark="空"/>
+                                            <TextBlock Grid.Column="1" Name="lblUnitGeneralName" Text="将领姓名: 无" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="DarkBlue"/>
+                                        </Grid>
+                                        <CheckBox Name="chkUnitGeneralActive" Content="启用附加参数"/>
+                                        <TextBlock Text="附加参数:"/>
+                                        <NumericUpDown Name="nudUnitGeneralParam2" Minimum="0" Maximum="255" FormatString="F0" Watermark="空"/>
+                                    </StackPanel>
+
+                                    <Separator Height="1" Background="#e2e8f0" Margin="0,5"/>
+
+                                    <!-- 特种部队配置 -->
+                                    <TextBlock Text="特种部队配置" FontWeight="Bold" Foreground="#334155"/>
+                                    <CheckBox Name="chkUnitExArmy" Content="启用特种部队配置"/>
+                                    <StackPanel Name="panelUnitExArmy" Spacing="8" Margin="15,0,0,0">
+                                        <TextBlock Text="特种部队 ID:"/>
+                                        <Grid ColumnDefinitions="*, Auto">
+                                            <NumericUpDown Name="nudUnitExArmyId" Minimum="0" Maximum="65535" FormatString="F0" Watermark="空"/>
+                                            <TextBlock Grid.Column="1" Name="lblUnitExArmyName" Text="名称: 无" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="DarkBlue"/>
+                                        </Grid>
+                                        
+                                        <TextBlock Text="当前/最大血量:"/>
+                                        <Grid ColumnDefinitions="*, *">
+                                            <NumericUpDown Name="nudUnitExArmyHp" Minimum="0" Maximum="65535" FormatString="F0" Watermark="空" Margin="0,0,5,0"/>
+                                            <NumericUpDown Grid.Column="1" Name="nudUnitExArmyMaxHp" Minimum="0" Maximum="65535" FormatString="F0" Watermark="空" Margin="5,0,0,0"/>
+                                        </Grid>
+
+                                        <TextBlock Text="参数 1 / 4:"/>
+                                        <Grid ColumnDefinitions="*, *">
+                                            <NumericUpDown Name="nudUnitExArmyField1" Minimum="0" Maximum="65535" FormatString="F0" Watermark="空" Margin="0,0,5,0"/>
+                                            <NumericUpDown Grid.Column="1" Name="nudUnitExArmyField4" Minimum="0" Maximum="65535" FormatString="F0" Watermark="空" Margin="5,0,0,0"/>
+                                        </Grid>
+
+                                        <TextBlock Text="参数 5:"/>
+                                        <NumericUpDown Name="nudUnitExArmyField5" Minimum="0" Maximum="65535" FormatString="F0" Watermark="空"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
+                    
+                    <!-- 标签 3: 建筑 -->
+                                        <!-- 标签 3: 建筑修改 -->
+                    <TabItem Header="建筑修改" FontSize="13">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel Margin="10" Spacing="10">
+                                                                <CheckBox Name="chkHasBuilding" Content="在此地块部署建筑"/>
+                                <StackPanel Name="panelBuilding" Spacing="10" Margin="5,0,0,0">
+                                    <!-- 1. 所属势力 ID -->
+                                    <TextBlock Text="所属势力 ID:"/>
+                                    <NumericUpDown Name="nudBldgOwner" Minimum="-1" Maximum="255" FormatString="F0" Watermark="空"/>
+
+                                    <!-- 2. 建筑配置 ID & 名 -->
+                                    <TextBlock Text="建筑配置 ID:"/>
+                                    <Grid ColumnDefinitions="*, Auto">
+                                        <NumericUpDown Name="nudBuildingId" Minimum="-1" Maximum="65535" FormatString="F0" Watermark="空"/>
+                                        <TextBlock Grid.Column="1" Name="lblBuildingName" Text="名: --" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="DarkBlue"/>
+                                    </Grid>
+
+                                    <!-- 3. 参数 2 -->
+                                    <TextBlock Text="参数 2:"/>
+                                    <NumericUpDown Name="nudBldgFlag" Minimum="-1" Maximum="65535" FormatString="F0" Watermark="空"/>
+
+                                    <!-- 4. 参数 3 -->
+                                    <TextBlock Text="参数 3:"/>
+                                    <NumericUpDown Name="nudBldgExtraFlag" Minimum="-1" Maximum="65535" FormatString="F0" Watermark="空"/>
+
+                                    <!-- 5. 贴图偏移 dx / dy -->
+                                    <TextBlock Text="贴图偏移 dx / dy:"/>
+                                    <Grid ColumnDefinitions="*, *">
+                                        <NumericUpDown Name="nudBldgDx" Minimum="-128" Maximum="127" FormatString="F0" Watermark="空" Margin="0,0,5,0"/>
+                                        <NumericUpDown Grid.Column="1" Name="nudBldgDy" Minimum="-128" Maximum="127" FormatString="F0" Watermark="空" Margin="5,0,0,0"/>
+                                    </Grid>
+
+                                    <!-- 6. 参数 6 -->
+                                    <TextBlock Text="参数 6:"/>
+                                    <NumericUpDown Name="nudBldgField6" Minimum="-1" Maximum="65535" FormatString="F0" Watermark="空"/>
+
+                                    <Button Name="btnDeleteBuilding" Content="删除建筑" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"/>
+                                </StackPanel>
+
+                                <Separator Height="1" Background="#e2e8f0" Margin="0,5"/>
+
+                                <!-- 工事部分 -->
+                                                                <CheckBox Name="chkHasFort" Content="在此地块部署工事"/>
+                                <StackPanel Name="panelFort" Spacing="10" Margin="5,0,0,0">
+                                    <!-- 1. 工事配置 ID -->
+                                    <TextBlock Text="工事配置 ID:"/>
+                                    <Grid ColumnDefinitions="*, Auto">
+                                        <NumericUpDown Name="nudFortType" Minimum="0" Maximum="65535" FormatString="F0" Watermark="空"/>
+                                        <TextBlock Grid.Column="1" Name="lblFortTypeName" Text="工事名称: 空" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="DarkBlue"/>
+                                    </Grid>
+
+                                    <!-- 2. 参数 2 -->
+                                    <TextBlock Text="参数 2:"/>
+                                    <NumericUpDown Name="nudFortField1" Minimum="0" Maximum="65535" FormatString="F0" Watermark="空"/>
+
+                                    <!-- 3. 参数 3 -->
+                                    <TextBlock Text="参数 3:"/>
+                                    <NumericUpDown Name="nudFortField3" Minimum="0" Maximum="65535" FormatString="F0" Watermark="空"/>
+
+                                    <Button Name="btnDeleteFort" Content="添加工事" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
+
+                    <!-- 标签 4: 势力 -->
+                                        <!-- 标签 4: 阵营/势力 -->
+                    <TabItem Header="阵营/势力" FontSize="13">
+                        <Grid ColumnDefinitions="*, 2*">
+                            <!-- 左侧：势力列表 + 操作按钮 -->
+                            <Grid RowDefinitions="*, Auto" Margin="5">
+                                <ListBox Name="lstFactions"/>
+                                <UniformGrid Grid.Row="1" Columns="2" Margin="0,5,0,0">
+                                    <Button Name="btnAddFaction" Content="添加" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="2"/>
+                                    <Button Name="btnDeleteFaction" Content="删除" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="2"/>
+                                    <Button Name="btnFactionUp" Content="上移" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="2"/>
+                                    <Button Name="btnFactionDown" Content="下移" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="2"/>
+                                </UniformGrid>
+                            </Grid>
+
+                            <!-- 右侧：势力属性编辑器 -->
+                            <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
+                                <StackPanel Margin="10" Spacing="10">
+                                    <TextBlock Text="[ 势力属性修改 ]" FontWeight="Bold" Foreground="#0284c7"/>
+                                    <StackPanel Name="panelFactionEdit" Spacing="10">
+                                        <!-- 1. 战役内势力 ID -->
+                                        <TextBlock Text="战役内势力 ID:"/>
+                                        <NumericUpDown Name="nudFactionId" Minimum="-1" Maximum="65535" FormatString="F0" Watermark="空"/>
+
+                                        <!-- 2. 所属阵营 ID -->
+                                        <TextBlock Text="所属阵营 ID:"/>
+                                        <NumericUpDown Name="nudFactionCamp" Minimum="-1" Maximum="255" FormatString="F0" Watermark="空"/>
+
+                                        <!-- 3. 国家 ID -->
+                                        <TextBlock Text="国家 ID:"/>
+                                        <NumericUpDown Name="nudFactionCountry" Minimum="0" Maximum="65535" FormatString="F0" Watermark="空"/>
+
+                                        <!-- 4. 控制权类型 -->
+                                        <TextBlock Text="控制权类型:"/>
+                                        <NumericUpDown Name="nudFactionIsAI" Minimum="-1" Maximum="255" FormatString="F0" Watermark="空"/>
+
+                                        <!-- 5. 参数 4 -->
+                                        <TextBlock Text="参数 4:"/>
+                                        <NumericUpDown Name="nudFactionGeneralLimit" Minimum="-1" Maximum="255" FormatString="F0" Watermark="空"/>
+
+                                        <!-- 6. 占位对齐 1 -->
+                                        <TextBlock Text="占位对齐 1:"/>
+                                        <NumericUpDown Name="nudFactionAlign1" Minimum="-1" Maximum="255" FormatString="F0" Watermark="空"/>
+
+                                        <!-- 7. 初始金币资源 -->
+                                        <TextBlock Text="初始金币资源:"/>
+                                        <NumericUpDown Name="nudFactionGold" Minimum="-1" Maximum="4294967295" FormatString="F0" Watermark="空"/>
+
+                                        <!-- 8. 初始科技资源 -->
+                                        <TextBlock Text="初始科技资源:"/>
+                                        <NumericUpDown Name="nudFactionTech" Minimum="-1" Maximum="4294967295" FormatString="F0" Watermark="空"/>
+
+                                        <!-- 9. 阵营修正 1 -->
+                                        <TextBlock Text="阵营修正 1:"/>
+                                        <NumericUpDown Name="nudFactionIncomeMod" Minimum="-1" Maximum="100" Increment="0.05" FormatString="F2" Watermark="空"/>
+
+                                        <!-- 10. 阵营修正 2 -->
+                                        <TextBlock Text="阵营修正 2:"/>
+                                        <NumericUpDown Name="nudFactionDamageMod" Minimum="-1" Maximum="100" Increment="0.05" FormatString="F2" Watermark="空"/>
+
+                                        <!-- 11. 部队生命值倍率修正 -->
+                                        <TextBlock Text="部队生命值倍率修正:"/>
+                                        <NumericUpDown Name="nudFactionHpMod" Minimum="-1" Maximum="100" Increment="0.05" FormatString="F2" Watermark="空"/>
+
+                                        <!-- 12. 代表颜色 (RGBA) -->
+                                        <TextBlock Text="代表颜色 (RGBA):"/>
+                                        <Grid ColumnDefinitions="Auto, *" Margin="0,2">
+                                            <TextBlock Text="R: " VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                            <NumericUpDown Grid.Column="1" Name="nudFactionColorR" Minimum="-1" Maximum="255" FormatString="F0" Watermark="空"/>
+                                        </Grid>
+                                        <Grid ColumnDefinitions="Auto, *" Margin="0,2">
+                                            <TextBlock Text="G: " VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                            <NumericUpDown Grid.Column="1" Name="nudFactionColorG" Minimum="-1" Maximum="255" FormatString="F0" Watermark="空"/>
+                                        </Grid>
+                                        <Grid ColumnDefinitions="Auto, *" Margin="0,2">
+                                            <TextBlock Text="B: " VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                            <NumericUpDown Grid.Column="1" Name="nudFactionColorB" Minimum="-1" Maximum="255" FormatString="F0" Watermark="空"/>
+                                        </Grid>
+                                        <Grid ColumnDefinitions="Auto, *" Margin="0,2">
+                                            <TextBlock Text="A: " VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                            <NumericUpDown Grid.Column="1" Name="nudFactionColorA" Minimum="-1" Maximum="255" FormatString="F0" Watermark="空"/>
+                                        </Grid>
+
+                                        <!-- 13. 占位对齐 2 -->
+                                        <TextBlock Text="占位对齐 2:"/>
+                                        <NumericUpDown Name="nudFactionAlign2" Minimum="-1" Maximum="65535" FormatString="F0" Watermark="空"/>
+
+                                        <!-- 14. 参数 13 -->
+                                        <TextBlock Text="参数 13:"/>
+                                        <NumericUpDown Name="nudFactionConfigId" Minimum="-1" Maximum="65535" FormatString="F0" Watermark="空"/>
+
+                                        <!-- 15. 参数 14 -->
+                                        <TextBlock Text="参数 14:"/>
+                                        <NumericUpDown Name="nudFactionGeneralFlag" Minimum="-1" Maximum="255" FormatString="F0" Watermark="空"/>
+
+                                        <!-- 16. 参数 15 -->
+                                        <TextBlock Text="参数 15:"/>
+                                        <NumericUpDown Name="nudFactionConfigRef" Minimum="-1" Maximum="65535" FormatString="F0" Watermark="空"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Grid>
+                    </TabItem>
+
+                    <!-- 标签 5: 全局 -->
+                                        <!-- 标签 5: 全局配置 -->
+                    <TabItem Header="全局配置" FontSize="13">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel Margin="10" Spacing="10">
+                                <TextBlock Text="未知文件头 1:"/>
+                                <NumericUpDown Name="nudStageNum" Minimum="-1" Maximum="65535" FormatString="F0" Watermark="空"/>
+
+                                <TextBlock Text="未知文件头 2:"/>
+                                <NumericUpDown Name="nudVersion" Minimum="-1" Maximum="65535" FormatString="F0" Watermark="空"/>
+
+                                <TextBlock Text="未知文件头 3:"/>
+                                <NumericUpDown Name="nudTag" Minimum="-1" Maximum="65535" FormatString="F0" Watermark="空"/>
+
+                                <Separator Height="1" Background="#e2e8f0" Margin="0,5"/>
+
+                                <!-- 关卡目标 -->
+                                <TextBlock Text="关卡目标:" FontWeight="Bold" Foreground="#334155"/>
+                                <ListBox Name="lstStageTargets" Height="110" BorderBrush="#cbd5e1" BorderThickness="1"/>
+
+                                <StackPanel Name="panelTargetEdit" Spacing="8">
+                                    <TextBlock Text="类别 ID:"/>
+                                    <NumericUpDown Name="nudTargetType" Minimum="-1" Maximum="65535" FormatString="F0" Watermark="空"/>
+
+                                    <TextBlock Text="目标值:"/>
+                                    <NumericUpDown Name="nudTargetVal" Minimum="-32769" Maximum="32767" FormatString="F0" Watermark="空"/>
+
+                                    <TextBlock Text="参数 1:"/>
+                                    <NumericUpDown Name="nudTargetParam1" Minimum="-1" Maximum="65535" FormatString="F0" Watermark="空"/>
+
+                                    <TextBlock Text="参数 2:"/>
+                                    <NumericUpDown Name="nudTargetParam2" Minimum="-1" Maximum="65535" FormatString="F0" Watermark="空"/>
+
+                                    <TextBlock Text="标志/状态:"/>
+                                    <NumericUpDown Name="nudTargetFlag" Minimum="-1" Maximum="255" FormatString="F0" Watermark="空"/>
+                                </StackPanel>
+
+                                <UniformGrid Columns="3" Margin="0,5,0,0">
+                                    <Button Name="btnAddTarget" Content="添加目标条件" Margin="0,0,4,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"/>
+                                    <Button Name="btnSaveTarget" Content="保存选中修改" Margin="2,0,2,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"/>
+                                    <Button Name="btnDeleteTarget" Content="删除选中目标" Margin="4,0,0,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"/>
+                                </UniformGrid>
+
+                                <Separator Height="1" Background="#e2e8f0" Margin="0,5"/>
+
+                                <!-- 增兵部署点配置 -->
+                                <TextBlock Text="增兵部署点配置:" FontWeight="Bold" Foreground="#334155"/>
+                                <ListBox Name="lstReinforces" Height="100" BorderBrush="#cbd5e1" BorderThickness="1"/>
+
+                                <StackPanel Name="panelReinforceEdit" Spacing="8" Margin="0,5,0,0">
+                                    <TextBlock Text="格子索引:"/>
+                                    <NumericUpDown Name="nudRpCellIdx" Minimum="0" Maximum="65535" FormatString="F0" Watermark="空"/>
+                                    <TextBlock Text="所属势力 ID:"/>
+                                    <NumericUpDown Name="nudRpFactionId" Minimum="0" Maximum="255" FormatString="F0" Watermark="空"/>
+                                    <TextBlock Text="参数1:"/>
+                                    <CheckBox Name="chkRpIsKey" Content="参数1"/>
+                                    <TextBlock Text="参数2:"/>
+                                    <NumericUpDown Name="nudRpFlag" Minimum="0" Maximum="255" FormatString="F0" Watermark="空"/>
+                                </StackPanel>
+
+                                <UniformGrid Columns="3" Margin="0,5,0,0">
+                                    <Button Name="btnAddReinforce" Content="添加部署点" Margin="0,0,4,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"/>
+                                    <Button Name="btnSaveReinforce" Content="保存选中修改" Margin="2,0,2,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"/>
+                                    <Button Name="btnDeleteReinforce" Content="删除选中部署" Margin="4,0,0,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"/>
+                                </UniformGrid>
+
+                                <Separator Height="1" Background="#e2e8f0" Margin="0,5"/>
+
+                                <!-- 地图尺寸与可游玩区域配置 -->
+                                <TextBlock Text="地图尺寸与可游玩区域配置" FontWeight="Bold" Foreground="#334155"/>
+                                <TextBlock Text="地图总宽度:"/>
+                                <NumericUpDown Name="nudMapW" Minimum="1" Maximum="200" FormatString="F0" Watermark="空"/>
+
+                                <TextBlock Text="地图总高度:"/>
+                                <NumericUpDown Name="nudMapH" Minimum="1" Maximum="200" FormatString="F0" Watermark="空"/>
+
+                                <Button Name="btnResizeMap" Content="应用并重构地图尺寸" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"/>
+
+                                <TextBlock Text="左侧不可玩空白:"/>
+                                <NumericUpDown Name="nudLeftMargin" Minimum="0" Maximum="200" FormatString="F0" Watermark="空"/>
+
+                                <TextBlock Text="顶部不可玩空白:"/>
+                                <NumericUpDown Name="nudTopMargin" Minimum="0" Maximum="200" FormatString="F0" Watermark="空"/>
+
+                                <TextBlock Text="可游玩区域宽度:"/>
+                                <NumericUpDown Name="nudPlayWidth" Minimum="1" Maximum="200" FormatString="F0" Watermark="空"/>
+
+                                <TextBlock Text="可游玩区域高度:"/>
+                                <NumericUpDown Name="nudPlayHeight" Minimum="1" Maximum="200" FormatString="F0" Watermark="空"/>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
+                </TabControl>
+            </Border>
+        </Grid>
+    </Grid>
+    <!-- Custom Modal Dialog Overlay -->
+    <Grid Name="overlayBtlList" Background="#80000000" IsVisible="False">
+            <Border HorizontalAlignment="Center" VerticalAlignment="Center" 
+                    Background="White" CornerRadius="12" Width="450" Height="400"
+                    BorderBrush="#cbd5e1" BorderThickness="1"
+                    BoxShadow="0 4 15 0 #20000000">
+                <Grid RowDefinitions="Auto, *, Auto" Margin="20">
+                    <!-- Header -->
+                    <Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="0,0,0,15">
+                        <TextBlock Text="本地文件选择 (.btl / .json)" FontSize="18" FontWeight="Bold" Foreground="#1e293b" VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" Name="btnCloseBtlList" Content="✕" Background="Transparent" BorderThickness="0" FontSize="16" Foreground="#64748b"/>
+                    </Grid>
+
+                    <!-- Search and File List -->
+                    <Grid Grid.Row="1" RowDefinitions="Auto, *">
+                        <TextBox Grid.Row="0" Name="txtBtlSearch" Margin="0,0,0,10"/>
+                        <ListBox Grid.Row="1" Name="lstBtlFiles" BorderBrush="#cbd5e1" BorderThickness="1" CornerRadius="4">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" Margin="8,4" Spacing="10">
+                                        <TextBlock Text="📄" Foreground="#6366f1" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding}" VerticalAlignment="Center" FontSize="14" FontWeight="SemiBold"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Grid>
+
+                    <!-- Action Footer -->
+                    <UniformGrid Grid.Row="2" Columns="2" Margin="0,15,0,0">
+                        <Button Name="btnConfirmBtlLoad" Content="加载关卡" Margin="0,0,7,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="12" Background="#6366f1" Foreground="White" CornerRadius="6" FontWeight="Bold"/>
+                        <Button Name="btnCancelBtlLoad" Content="取消" Margin="7,0,0,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="12" Background="#f1f5f9" Foreground="#334155" CornerRadius="6"/>
+                    </UniformGrid>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Custom Save Modal Dialog Overlay -->
+        <Grid Name="overlaySaveMap" Background="#80000000" IsVisible="False">
+            <Border HorizontalAlignment="Center" VerticalAlignment="Center" 
+                    Background="White" CornerRadius="12" Width="450" Height="320"
+                    BorderBrush="#cbd5e1" BorderThickness="1"
+                    BoxShadow="0 4 15 0 #20000000">
+                <Grid RowDefinitions="Auto, *, Auto" Margin="20">
+                    <!-- Header -->
+                    <Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="0,0,0,15">
+                        <TextBlock Text="保存关卡地图" FontSize="18" FontWeight="Bold" Foreground="#1e293b" VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" Name="btnCloseSaveMap" Content="✕" Background="Transparent" BorderThickness="0" FontSize="16" Foreground="#64748b"/>
+                    </Grid>
+
+                    <!-- Save Options -->
+                    <StackPanel Grid.Row="1" Spacing="12">
+                        <TextBlock Text="文件名:" FontSize="14" FontWeight="SemiBold" Foreground="#475569"/>
+                        <TextBox Name="txtSaveFileName" Height="40"/>
+                        
+                        <TextBlock Text="保存格式:" FontSize="14" FontWeight="SemiBold" Foreground="#475569" Margin="0,5,0,0"/>
+                        <ComboBox Name="cbSaveFormat" HorizontalAlignment="Stretch" SelectedIndex="0">
+                            <ComboBoxItem>BTL 二进制 (.btl)</ComboBoxItem>
+                            <ComboBoxItem>BTLD JSON (.btld.json)</ComboBoxItem>
+                            <ComboBoxItem>Clean JSON (.json)</ComboBoxItem>
+                        </ComboBox>
+                    </StackPanel>
+
+                    <!-- Action Footer -->
+                    <UniformGrid Grid.Row="2" Columns="2" Margin="0,15,0,0">
+                        <Button Name="btnConfirmSaveMap" Content="保存" Margin="0,0,7,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="12" Background="#16a34a" Foreground="White" CornerRadius="6" FontWeight="Bold"/>
+                        <Button Name="btnCancelSaveMap" Content="取消" Margin="7,0,0,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="12" Background="#f1f5f9" Foreground="#334155" CornerRadius="6"/>
+                    </UniformGrid>
+                </Grid>
+            </Border>
+        </Grid>
+    </Panel>
+</UserControl>
