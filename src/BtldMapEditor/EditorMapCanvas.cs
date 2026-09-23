@@ -193,6 +193,14 @@ namespace BtldMapEditor
             RefreshFactionRoles();
         }
 
+        /// <summary>脚本改完当前文档后，按这份文档重投影格子，保留选中格。</summary>
+        public void ReloadCells(BtlFrontDocument doc)
+        {
+            _doc = doc;
+            RebuildCells();
+            Invalidate();
+        }
+
         /// <summary>撤销/重做时更新 Document，保留 sprite 缓存并对变化格做脏区重绘。</summary>
         public void ApplyDocumentFromHistory(BtlFrontDocument doc)
         {

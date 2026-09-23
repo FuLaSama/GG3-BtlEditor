@@ -1,5 +1,6 @@
 using System.Globalization;
 using BtlCore.Front;
+using BtlCore.Scripting;
 using BtldMapEditor.Front;
 
 namespace BtldMapEditor
@@ -15,24 +16,6 @@ namespace BtldMapEditor
         {
             var ai = FrontNav.EnsureTable(Doc.Root, 6);
             return FrontNav.EnsureVec(ai, 1, "table");
-        }
-
-        BtlVector TargetVec()
-        {
-            var meta = FrontNav.EnsureTable(Doc.Root, 2);
-            return FrontNav.EnsureVec(meta, 0, "table");
-        }
-
-        BtlVector WeatherVec()
-        {
-            var w = FrontNav.EnsureTable(Doc.Root, 9);
-            return FrontNav.EnsureVec(w, 0, "table");
-        }
-
-        BtlVector ReinforceVec()
-        {
-            var battle = FrontNav.EnsureTable(Doc.Root, 3);
-            return FrontNav.EnsureVec(battle, 1, "table");
         }
 
         BtlVector FactionVec()
@@ -55,6 +38,8 @@ namespace BtldMapEditor
 
         void ReloadStageLists()
         {
+            if (lvTargets != null)
+            {
             lvTargets.Items.Clear();
             foreach (var t in FrontNav.TableItems(FrontNav.Targets(Doc)))
             {
@@ -65,7 +50,10 @@ namespace BtldMapEditor
                 item.SubItems.Add(FrontNav.ScalarI64N(t, 4)?.ToString() ?? "");
                 lvTargets.Items.Add(item);
             }
+            }
 
+            if (lvReinforces != null)
+            {
             lvReinforces.Items.Clear();
             foreach (var rp in FrontNav.TableItems(FrontNav.ReinforcePoints(Doc)))
             {
@@ -75,7 +63,10 @@ namespace BtldMapEditor
                 item.SubItems.Add(FrontNav.ScalarI64N(rp, 3)?.ToString() ?? "");
                 lvReinforces.Items.Add(item);
             }
+            }
 
+            if (lvWeathers != null)
+            {
             lvWeathers.Items.Clear();
             foreach (var w in FrontNav.TableItems(FrontNav.Weathers(Doc)))
             {
@@ -83,6 +74,7 @@ namespace BtldMapEditor
                 item.SubItems.Add(FrontNav.ScalarI64(w, 1).ToString(CultureInfo.InvariantCulture));
                 item.SubItems.Add(FrontNav.ScalarI64(w, 2).ToString(CultureInfo.InvariantCulture));
                 lvWeathers.Items.Add(item);
+            }
             }
 
             lvReinforceUnits.Items.Clear();
@@ -440,13 +432,12 @@ namespace BtldMapEditor
         void AddBehaviorRule(object sender, EventArgs e)
         {
             if (!HasDoc) return;
-            var vec = BehaviorVec();
-            var tbl = BtlFrontJson.NewTable();
-            SetOpt(tbl, 0, "u16", (ushort)(nudAiBehaviorActionFlag.NullableValue ?? 1));
-            var cells = BtlFrontJson.NewVector("u16");
-            foreach (var c in ParseTargetCellsInput(txtAiBehaviorTargetCells.Text)) cells.V.Add(c);
-            tbl.F[1] = cells;
-            vec.V.Add(tbl);
+            if (!RunEdit("add_route", new ScriptArgs
+            {
+                Input = EditInput(
+                    ("flag", nudAiBehaviorActionFlag.NullableValue == null ? null : (ushort)nudAiBehaviorActionFlag.NullableValue.Value),
+                    ("cells", EditList(ParseTargetCellsInput(txtAiBehaviorTargetCells.Text))))
+            })) return;
             RefreshAiBehaviorsUi();
             if (lvFactionAiBehaviors.Items.Count > 0)
             {
@@ -467,10 +458,14 @@ namespace BtldMapEditor
             }
             int selIdx = lvFactionAiBehaviors.SelectedIndices[0];
             if (selIdx < 0 || selIdx >= list.Count) return;
-            var item = list[selIdx];
-            SetOpt(item, 0, "u16", (ushort)(nudAiBehaviorActionFlag.NullableValue ?? 1));
-            var cells = FrontNav.EnsureVec(item, 1, "u16");
-            FrontNav.SetU16Items(cells, ParseTargetCellsInput(txtAiBehaviorTargetCells.Text));
+            if (!RunEdit("set_route", new ScriptArgs
+            {
+                ObjectPath = "Root.ai_info.behaviors",
+                ObjectIndex = selIdx,
+                Input = EditInput(
+                    ("flag", nudAiBehaviorActionFlag.NullableValue == null ? null : (ushort)nudAiBehaviorActionFlag.NullableValue.Value),
+                    ("cells", EditList(ParseTargetCellsInput(txtAiBehaviorTargetCells.Text))))
+            })) return;
             RefreshAiBehaviorsUi();
             if (selIdx < lvFactionAiBehaviors.Items.Count)
             {
@@ -485,7 +480,7 @@ namespace BtldMapEditor
             var vec = FrontNav.Behaviors(Doc);
             if (lvFactionAiBehaviors.SelectedIndices.Count == 0 || vec?.V == null) return;
             int selIdx = lvFactionAiBehaviors.SelectedIndices[0];
-            FrontNav.RemoveAt(vec, selIdx);
+            if (!RunEdit("delete_route", new ScriptArgs { Index = selIdx })) return;
             RefreshAiBehaviorsUi();
             if (lvFactionAiBehaviors.Items.Count > 0)
             {
@@ -496,36 +491,23 @@ namespace BtldMapEditor
             AddHistoryState();
         }
 
-        static void ApplyClimate(MapCell cell, PaletteItem item)
+        static TerrainEdits.Cell ViewOf(MapCell cell)
         {
-            ushort t = cell.Terrain;
-            int flags = t >> 8;
-            int climate = t & 7;
-            int variation = (t >> 3) & 0x1F;
-            if (item.Sea == true) flags |= 2;
-            else
+            if (cell == null) return null;
+            return new TerrainEdits.Cell
             {
-                climate = item.T ?? climate;
-                variation = item.Variant;
-            }
-            cell.Terrain = (ushort)((climate & 7) | ((variation & 0x1F) << 3) | (flags << 8));
+                Terrain = cell.Terrain,
+                Decor = cell.Attr,
+                Main = cell.AttrA2,
+                Secondary = cell.AttrA3,
+            };
         }
 
-        static void ApplyLayer(MapCell cell, PaletteItem item, PaletteTarget target)
+        static string TerrainLayerKey(PaletteTarget target)
         {
-            SetLayer(cell, target, FrontNav.NewAttr((byte)(item.TerrainId ?? 0), (byte)item.Variant, (sbyte)item.Dx, (sbyte)item.Dy));
-        }
-
-        static void SetLayer(MapCell cell, PaletteTarget target, BtlStruct attr)
-        {
-            int bit = target == PaletteTarget.Decor ? 4 : target == PaletteTarget.Main ? 8 : 16;
-            ushort t = cell.Terrain;
-            if (attr == null) t = (ushort)(t & unchecked((ushort)~(bit << 8)));
-            else t = (ushort)(t | (bit << 8));
-            cell.Terrain = t;
-            if (target == PaletteTarget.Decor) cell.Attr = attr ?? FrontNav.NewAttr(0, 0, 0, 0);
-            else if (target == PaletteTarget.Main) cell.AttrA2 = attr;
-            else cell.AttrA3 = attr;
+            if (target == PaletteTarget.Decor) return "decor";
+            if (target == PaletteTarget.Main) return "main";
+            return "secondary";
         }
 
         static BtlStruct GetLayerAttr(MapCell cell, PaletteTarget target)
@@ -538,11 +520,8 @@ namespace BtldMapEditor
 
         static bool LayerHasContent(MapCell cell, PaletteTarget target)
         {
-            if (target == PaletteTarget.Climate) return false;
-            int bit = LayerBit(target);
-            if (((cell.Terrain >> 8) & bit) == 0) return false;
-            var attr = GetLayerAttr(cell, target);
-            return attr != null && FrontNav.AttrU8(attr, 0) != 0;
+            if (cell == null || target == PaletteTarget.Climate) return false;
+            return TerrainEdits.HasContent(ViewOf(cell), TerrainLayerKey(target));
         }
 
         void RefreshTerrainOffsetUi(MapCell cell)
@@ -582,13 +561,18 @@ namespace BtldMapEditor
             if (target == PaletteTarget.Climate) return;
             var cell = mapCanvas.Cells[_selectedCellIdx];
             if (!LayerHasContent(cell, target)) return;
+            if (!RunEdit("set_offset", new ScriptArgs
+            {
+                CellIndex = _selectedCellIdx,
+                Input = EditInput(
+                    ("layer", TerrainLayerKey(target)),
+                    ("dx", trkTerrainDx.Value),
+                    ("dy", trkTerrainDy.Value))
+            })) return;
+            cell = mapCanvas.Cells[_selectedCellIdx];
             var attr = GetLayerAttr(cell, target);
-            if (attr == null) return;
-            FrontNav.SetMember(attr, 2, (sbyte)trkTerrainDx.Value);
-            FrontNav.SetMember(attr, 3, (sbyte)trkTerrainDy.Value);
-            lblTerrainDxVal.Text = FrontNav.AttrI8(attr, 2).ToString();
-            lblTerrainDyVal.Text = FrontNav.AttrI8(attr, 3).ToString();
-            mapCanvas.Invalidate();
+            lblTerrainDxVal.Text = (attr == null ? 0 : FrontNav.AttrI8(attr, 2)).ToString();
+            lblTerrainDyVal.Text = (attr == null ? 0 : FrontNav.AttrI8(attr, 3)).ToString();
         }
 
         void ApplyTerrainOffsetFromMouse(float mapX, float mapY, bool recordHistory)
@@ -615,10 +599,12 @@ namespace BtldMapEditor
             var attr = GetLayerAttr(cell, target);
             if (attr == null) return;
             if (FrontNav.AttrI8(attr, 2) == (sbyte)dx && FrontNav.AttrI8(attr, 3) == (sbyte)dy) return;
-            FrontNav.SetMember(attr, 2, (sbyte)dx);
-            FrontNav.SetMember(attr, 3, (sbyte)dy);
-            mapCanvas.Invalidate();
-            RefreshTerrainOffsetUi(cell);
+            if (!RunEdit("set_offset", new ScriptArgs
+            {
+                CellIndex = _selectedCellIdx,
+                Input = EditInput(("layer", TerrainLayerKey(target)), ("dx", dx), ("dy", dy))
+            })) return;
+            RefreshTerrainOffsetUi(mapCanvas.Cells[_selectedCellIdx]);
             if (recordHistory) AddHistoryState();
         }
 
@@ -746,26 +732,54 @@ namespace BtldMapEditor
             if (cell.Unit == null) return;
 
             ushort? uId = U16(nudUnitType);
-            FrontNav.SetAgentU16(cell.Unit, 3, uId);
+            int? genId = (int?)nudUnitGeneralId.NullableValue;
+            int? exArmyId = (int?)nudUnitExArmyId.NullableValue;
+            int index = EditIndex(FrontNav.Agents(Doc), cell.Unit);
+            if (index < 0) return;
+            if (!RunEdit("apply_unit", new ScriptArgs
+            {
+                ObjectPath = "Root.ai_info.agents",
+                ObjectIndex = index,
+                Input = EditInput(
+                    ("faction", U16(nudUnitFaction)),
+                    ("agent", U16(nudUnitAgentId)),
+                    ("unit", uId),
+                    ("hp", U16(nudUnitHp)),
+                    ("max_hp", U16(nudUnitMaxHp)),
+                    ("level", (int?)nudUnitLevel.NullableValue),
+                    ("stack", (int?)nudUnitStack.NullableValue),
+                    ("mobility", (int?)nudUnitMobility.NullableValue),
+                    ("direction", (int?)nudUnitDirection.NullableValue),
+                    ("val8", U16(nudUnitVal8)),
+                    ("val9", U16(nudUnitVal9)),
+                    ("play_mode", U8(nudUnitPlayMode)),
+                    ("ai_target", U8(nudUnitAiTarget)),
+                    ("faction_extra", U8(nudUnitFactionExtra)),
+                    ("behavior", chkUnitBehavior.Checked),
+                    ("behavior_0", U8(nudUnitBehaviorField0)),
+                    ("behavior_id", U16(nudUnitBehaviorId)),
+                    ("behavior_2", I16(nudUnitBehaviorField2)),
+                    ("behavior_radius", U8(nudUnitBehaviorRadius)),
+                    ("behavior_4", U8(nudUnitBehaviorField4)),
+                    ("behavior_center", U16(nudUnitBehaviorCenter)),
+                    ("behavior_6", I16(nudUnitBehaviorField6)),
+                    ("general", chkUnitGeneral.Checked),
+                    ("general_id", genId),
+                    ("general_active", chkUnitGeneralActive.Checked),
+                    ("general_param2", U8(nudUnitGeneralParam2)),
+                    ("ex", chkUnitExArmy.Checked),
+                    ("ex_id", exArmyId),
+                    ("ex_1", U8(nudUnitExArmyField1)),
+                    ("ex_hp", U16(nudUnitExArmyHp)),
+                    ("ex_max_hp", U16(nudUnitExArmyMaxHp)),
+                    ("ex_4", U16(nudUnitExArmyField4)),
+                    ("ex_5", U16(nudUnitExArmyField5)))
+            })) return;
+
             if (uId.HasValue && GameSettings.Units.TryGetValue(uId.Value, out var unitName))
                 lblUnitTypeName.Text = "兵种名称: " + unitName;
             else
                 lblUnitTypeName.Text = "兵种名称: " + (uId.HasValue ? "未知兵种" : "无");
-
-            FrontNav.SetAgentU16(cell.Unit, 1, U16(nudUnitFaction));
-            FrontNav.SetAgentU16(cell.Unit, 2, U16(nudUnitAgentId));
-            FrontNav.SetAgentU16(cell.Unit, 6, U16(nudUnitHp));
-            FrontNav.SetAgentU16(cell.Unit, 7, U16(nudUnitMaxHp));
-
-            int? level = (int?)nudUnitLevel.NullableValue;
-            int? stack = (int?)nudUnitStack.NullableValue;
-            FrontNav.SetAgentU16(cell.Unit, 4, (ushort)((level ?? 0) | ((stack ?? 0) << 8)));
-
-            int? mobility = (int?)nudUnitMobility.NullableValue;
-            int? direction = (int?)nudUnitDirection.NullableValue;
-            FrontNav.SetAgentU16(cell.Unit, 5, (ushort)(((mobility ?? 0) << 8) | ((direction ?? 0) & 0xFF)));
-            FrontNav.SetAgentU16(cell.Unit, 8, U16(nudUnitVal8));
-            FrontNav.SetAgentU16(cell.Unit, 9, U16(nudUnitVal9));
 
             if (_selectedOffMapUnit != null && lvReinforceUnits.SelectedIndices.Count > 0)
             {
@@ -774,60 +788,20 @@ namespace BtldMapEditor
                     lvReinforceUnits.Items[ri].Text = FrontNav.AgentU16(_selectedOffMapUnit, 2).ToString(CultureInfo.InvariantCulture);
             }
 
-            SetOpt(cell.Unit, 2, "u8", U8(nudUnitPlayMode));
-            SetOpt(cell.Unit, 5, "u8", U8(nudUnitAiTarget));
-            SetOpt(cell.Unit, 6, "u8", U8(nudUnitFactionExtra));
-
-            if (chkUnitBehavior.Checked)
-            {
-                var beh = FrontNav.EnsureTable(cell.Unit, 3);
-                SetOpt(beh, 0, "u8", U8(nudUnitBehaviorField0));
-                SetOpt(beh, 1, "u16", U16(nudUnitBehaviorId));
-                SetOpt(beh, 2, "i16", I16(nudUnitBehaviorField2));
-                SetOpt(beh, 3, "u8", U8(nudUnitBehaviorRadius));
-                SetOpt(beh, 4, "u8", U8(nudUnitBehaviorField4));
-                SetOpt(beh, 5, "u16", U16(nudUnitBehaviorCenter));
-                SetOpt(beh, 6, "i16", I16(nudUnitBehaviorField6));
-            }
-            else FrontNav.SetChild(cell.Unit, 3, null);
-
             if (chkUnitGeneral.Checked)
-            {
-                int? genId = (int?)nudUnitGeneralId.NullableValue;
                 lblUnitGeneralName.Text = "将领姓名: " + (genId.HasValue ? GameSettings.GetGeneralName(genId.Value) : "无");
-                var gen = FrontNav.EnsureTable(cell.Unit, 11);
-                SetOpt(gen, 0, "u16", (ushort)(genId ?? 0));
-                if (chkUnitGeneralActive.Checked || FrontNav.Has(gen, 1))
-                    SetOpt(gen, 1, "bool", chkUnitGeneralActive.Checked);
-                if (nudUnitGeneralParam2.NullableValue != null || FrontNav.Has(gen, 2))
-                    SetOpt(gen, 2, "u8", U8(nudUnitGeneralParam2) ?? 0);
-            }
             else
-            {
                 lblUnitGeneralName.Text = "将领姓名: 无";
-                FrontNav.SetChild(cell.Unit, 11, null);
-            }
 
             if (chkUnitExArmy.Checked)
             {
-                int? exArmyId = (int?)nudUnitExArmyId.NullableValue;
                 if (exArmyId.HasValue && GameSettings.Units.TryGetValue(exArmyId.Value, out var exName))
                     lblUnitExArmyName.Text = "名称: " + exName;
                 else
                     lblUnitExArmyName.Text = "名称: " + (exArmyId.HasValue ? "未知特种" : "无");
-                var ex = FrontNav.EnsureTable(cell.Unit, 10);
-                SetOpt(ex, 0, "u16", (ushort)(exArmyId ?? 0));
-                SetOpt(ex, 1, "u8", U8(nudUnitExArmyField1));
-                SetOpt(ex, 2, "u16", U16(nudUnitExArmyHp));
-                SetOpt(ex, 3, "u16", U16(nudUnitExArmyMaxHp));
-                SetOpt(ex, 4, "u16", U16(nudUnitExArmyField4));
-                SetOpt(ex, 5, "u16", U16(nudUnitExArmyField5));
             }
             else
-            {
                 lblUnitExArmyName.Text = "名称: 无";
-                FrontNav.SetChild(cell.Unit, 10, null);
-            }
 
             mapCanvas.Invalidate();
             AddHistoryState();
@@ -838,24 +812,28 @@ namespace BtldMapEditor
             if (_selectedCellIdx < 0) return;
             var cell = mapCanvas.Cells[_selectedCellIdx];
             if (cell.Unit != null)
-                cell.Unit = null;
+            {
+                if (!RunEdit("delete_unit", new ScriptArgs { CellIndex = _selectedCellIdx })) return;
+            }
             else
             {
                 ushort uId = (ushort)(nudUnitType.NullableValue ?? 101);
                 ushort agentId = (ushort)(nudUnitAgentId.NullableValue ?? new Random().Next(100, 999));
                 nudUnitAgentId.NullableValue = agentId;
-                int? level = (int?)nudUnitLevel.NullableValue;
-                int? stack = (int?)nudUnitStack.NullableValue;
-                ushort stackCount = (ushort)((level ?? 0) | ((stack ?? 0) << 8));
-                int? mobility = (int?)nudUnitMobility.NullableValue;
-                int? direction = (int?)nudUnitDirection.NullableValue;
-                ushort val5 = (ushort)(((mobility ?? 0) << 8) | ((direction ?? 0) & 0xFF));
-                cell.Unit = FrontNav.NewAgent(
-                    (ushort)_selectedCellIdx,
-                    (ushort)(nudUnitFaction.NullableValue ?? 0),
-                    agentId, uId, stackCount, val5,
-                    (ushort)(nudUnitHp.NullableValue ?? 0),
-                    (ushort)(nudUnitMaxHp.NullableValue ?? 0));
+                if (!RunEdit("place_unit", new ScriptArgs
+                {
+                    CellIndex = _selectedCellIdx,
+                    Input = EditInput(
+                        ("faction", (ushort)(nudUnitFaction.NullableValue ?? 0)),
+                        ("agent", agentId),
+                        ("unit", uId),
+                        ("level", (int?)nudUnitLevel.NullableValue),
+                        ("stack", (int?)nudUnitStack.NullableValue),
+                        ("mobility", (int?)nudUnitMobility.NullableValue),
+                        ("direction", (int?)nudUnitDirection.NullableValue),
+                        ("hp", U16(nudUnitHp)),
+                        ("max_hp", U16(nudUnitMaxHp)))
+                })) return;
             }
             CellSelectedClick(_selectedCellIdx);
             mapCanvas.Invalidate();
@@ -867,21 +845,21 @@ namespace BtldMapEditor
             if (_selectedCellIdx < 0 || _isUpdatingBuildingUi) return;
             var cell = mapCanvas.Cells[_selectedCellIdx];
             if (cell.TriggerBldg == null) return;
-            var detail = FrontNav.EnsureTable(cell.TriggerBldg, 3);
-            BtlStruct data;
-            if (detail.F.TryGetValue(0, out var n) && n is BtlStruct st) data = st;
-            else
+            int index = EditIndex(FrontNav.Events(Doc), cell.TriggerBldg);
+            if (index < 0) return;
+            if (!RunEdit("apply_building", new ScriptArgs
             {
-                data = FrontNav.StructFromFbs("BuildingData");
-                detail.F[0] = data;
-            }
-            FrontNav.SetMember(data, 1, U16(nudBldgType) ?? 0);
-            FrontNav.SetMember(data, 3, U8(nudBldgOwner) ?? 0);
-            FrontNav.SetMember(data, 0, U16(nudBldgFlag) ?? 0);
-            FrontNav.SetMember(data, 2, U8(nudBldgExtraFlag) ?? 0);
-            FrontNav.SetMember(data, 4, I8(nudBldgDx) ?? 0);
-            FrontNav.SetMember(data, 5, I8(nudBldgDy) ?? 0);
-            SetOpt(detail, 6, "u8", U8(nudBldgField6));
+                ObjectPath = "Root.trigger_info.events",
+                ObjectIndex = index,
+                Input = EditInput(
+                    ("type", U16(nudBldgType)),
+                    ("owner", U8(nudBldgOwner)),
+                    ("flag", U16(nudBldgFlag)),
+                    ("extra", U8(nudBldgExtraFlag)),
+                    ("dx", I8(nudBldgDx)),
+                    ("dy", I8(nudBldgDy)),
+                    ("field6", U8(nudBldgField6)))
+            })) return;
             if (U16(nudBldgType) is ushort bId)
                 lblBldgTypeName.Text = "名: " + GameSettings.GetBuildingName(bId);
             mapCanvas.Invalidate();
@@ -893,16 +871,22 @@ namespace BtldMapEditor
             if (_selectedCellIdx < 0) return;
             var cell = mapCanvas.Cells[_selectedCellIdx];
             if (cell.TriggerBldg != null)
-                cell.TriggerBldg = null;
-            else
             {
-                cell.TriggerBldg = FrontNav.NewBuildingEvent(
-                    (ushort)_selectedCellIdx,
-                    (ushort)(nudBldgType.NullableValue ?? 101),
-                    (ushort)(nudBldgFlag.NullableValue ?? 1),
-                    (byte)(nudBldgExtraFlag.NullableValue ?? 1),
-                    U8(nudBldgOwner), I8(nudBldgDx), I8(nudBldgDy), U8(nudBldgField6));
+                int index = EditIndex(FrontNav.Events(Doc), cell.TriggerBldg);
+                if (index < 0 || !RunEdit("delete_event", new ScriptArgs { Index = index })) return;
             }
+            else if (!RunEdit("place_building", new ScriptArgs
+            {
+                CellIndex = _selectedCellIdx,
+                Input = EditInput(
+                    ("type", (ushort)(nudBldgType.NullableValue ?? 101)),
+                    ("flag", (ushort)(nudBldgFlag.NullableValue ?? 1)),
+                    ("extra", (byte)(nudBldgExtraFlag.NullableValue ?? 1)),
+                    ("owner", U8(nudBldgOwner)),
+                    ("dx", I8(nudBldgDx)),
+                    ("dy", I8(nudBldgDy)),
+                    ("field6", U8(nudBldgField6)))
+            })) return;
             CellSelectedClick(_selectedCellIdx);
             mapCanvas.Invalidate();
             AddHistoryState();
@@ -913,10 +897,17 @@ namespace BtldMapEditor
             if (_selectedCellIdx < 0 || _isUpdatingFortUi) return;
             var cell = mapCanvas.Cells[_selectedCellIdx];
             if (cell.TriggerFort == null) return;
-            var fort = FrontNav.EnsureTable(cell.TriggerFort, 4);
-            SetOpt(fort, 0, "u8", U8(nudFortType) ?? 0);
-            SetOpt(cell.TriggerFort, 1, "u16", U16(nudFortField1) ?? 0);
-            SetOpt(fort, 3, "u8", U8(nudFortField3) ?? 0);
+            int index = EditIndex(FrontNav.Events(Doc), cell.TriggerFort);
+            if (index < 0) return;
+            if (!RunEdit("apply_fort", new ScriptArgs
+            {
+                ObjectPath = "Root.trigger_info.events",
+                ObjectIndex = index,
+                Input = EditInput(
+                    ("fort_id", U8(nudFortType)),
+                    ("field1", U16(nudFortField1)),
+                    ("field3", U8(nudFortField3)))
+            })) return;
             if (U8(nudFortType) is byte fId)
                 lblFortTypeName.Text = "工事名称: " + GameSettings.GetFortName(fId);
             mapCanvas.Invalidate();
@@ -928,15 +919,18 @@ namespace BtldMapEditor
             if (_selectedCellIdx < 0) return;
             var cell = mapCanvas.Cells[_selectedCellIdx];
             if (cell.TriggerFort != null)
-                cell.TriggerFort = null;
-            else
             {
-                cell.TriggerFort = FrontNav.NewFortEvent(
-                    (ushort)_selectedCellIdx,
-                    (byte)(nudFortType.NullableValue ?? 2),
-                    (byte)(nudFortField3.NullableValue ?? 0));
-                SetOpt(cell.TriggerFort, 1, "u16", U16(nudFortField1) ?? 0);
+                int index = EditIndex(FrontNav.Events(Doc), cell.TriggerFort);
+                if (index < 0 || !RunEdit("delete_event", new ScriptArgs { Index = index })) return;
             }
+            else if (!RunEdit("place_fort", new ScriptArgs
+            {
+                CellIndex = _selectedCellIdx,
+                Input = EditInput(
+                    ("fort_id", (byte)(nudFortType.NullableValue ?? 2)),
+                    ("field3", (byte)(nudFortField3.NullableValue ?? 0)),
+                    ("field1", U16(nudFortField1) ?? (ushort)0))
+            })) return;
             CellSelectedClick(_selectedCellIdx);
             mapCanvas.Invalidate();
             AddHistoryState();
@@ -1016,36 +1010,35 @@ namespace BtldMapEditor
         {
             var list = FrontNav.TableItems(FrontNav.FactionList(Doc));
             if (lbFactions.SelectedIndex < 0 || lbFactions.SelectedIndex >= list.Count) return;
-            var faction = list[lbFactions.SelectedIndex];
-            var info = FrontNav.EnsureFactionInfo(faction);
-            FrontNav.SetMember(info, 0, U16(nudFactionId) ?? 0);
-            FrontNav.SetMember(info, 2, U8(nudFactionCamp) ?? 0);
             int cId = (int)(nudFactionCountry.NullableValue ?? 0);
-            FrontNav.SetMember(info, 1, (ushort)cId);
             lblFactionCountryName.Text = GameSettings.GetCountryName(cId);
-            FrontNav.SetMember(info, 3, U8(nudFactionIsAI) ?? 0);
-            FrontNav.SetMember(info, 4, U8(nudFactionVal5) ?? 0);
-            FrontNav.SetMember(info, 5, U8(nudFactionAlign1) ?? 0);
-            FrontNav.SetMember(info, 6, U32(nudFactionGold) ?? 0);
-            FrontNav.SetMember(info, 7, U32(nudFactionTech) ?? 0);
-            FrontNav.SetMember(info, 8, F32(nudFactionIncomeMod) ?? 1f);
-            FrontNav.SetMember(info, 9, F32(nudFactionDamageMod) ?? 1f);
-            FrontNav.SetMember(info, 10, F32(nudFactionHpMod) ?? 1f);
-
-            if (nudFactionColorR.NullableValue.HasValue || nudFactionColorG.NullableValue.HasValue
-                || nudFactionColorB.NullableValue.HasValue || nudFactionColorA.NullableValue.HasValue)
+            if (!RunEdit("apply_faction", new ScriptArgs
             {
-                uint r = (uint)(nudFactionColorR.NullableValue ?? 0);
-                uint g = (uint)(nudFactionColorG.NullableValue ?? 0);
-                uint b = (uint)(nudFactionColorB.NullableValue ?? 0);
-                uint a = (uint)(nudFactionColorA.NullableValue ?? 255);
-                FrontNav.SetMember(info, 11, (r << 24) | (g << 16) | (b << 8) | a);
-            }
-
-            FrontNav.SetMember(info, 12, U16(nudFactionAlign2) ?? 0);
-            FrontNav.SetMember(info, 13, U16(nudFactionConfigId) ?? 0);
-            SetOpt(faction, 7, "u8", U8(nudFactionGeneralFlag));
-            SetOpt(faction, 8, "u16", U16(nudFactionConfigRef));
+                ObjectPath = "Root.faction_info.factions",
+                ObjectIndex = lbFactions.SelectedIndex,
+                Input = EditInput(
+                    ("id", U16(nudFactionId)),
+                    ("camp", U8(nudFactionCamp)),
+                    ("country", cId),
+                    ("is_ai", U8(nudFactionIsAI)),
+                    ("val5", U8(nudFactionVal5)),
+                    ("align1", U8(nudFactionAlign1)),
+                    ("gold", U32(nudFactionGold)),
+                    ("tech", U32(nudFactionTech)),
+                    ("income", F32(nudFactionIncomeMod)),
+                    ("damage", F32(nudFactionDamageMod)),
+                    ("hp", F32(nudFactionHpMod)),
+                    ("r", nudFactionColorR.NullableValue.HasValue ? (byte)nudFactionColorR.NullableValue.Value : null),
+                    ("g", nudFactionColorG.NullableValue.HasValue ? (byte)nudFactionColorG.NullableValue.Value : null),
+                    ("b", nudFactionColorB.NullableValue.HasValue ? (byte)nudFactionColorB.NullableValue.Value : null),
+                    ("a", nudFactionColorA.NullableValue.HasValue ? (byte)nudFactionColorA.NullableValue.Value : null),
+                    ("align2", U16(nudFactionAlign2)),
+                    ("config_id", U16(nudFactionConfigId)),
+                    ("general_flag", U8(nudFactionGeneralFlag)),
+                    ("config_ref", U16(nudFactionConfigRef)))
+            })) return;
+            var faction = FrontNav.TableItems(FrontNav.FactionList(Doc))[lbFactions.SelectedIndex];
+            var info = FrontNav.ChildStruct(faction, 0);
 
             lbFactions.Items[lbFactions.SelectedIndex] = $"势力 {FrontNav.MemberU16(info, 0)}: {GameSettings.GetCountryName(cId)}";
             mapCanvas.Invalidate();
@@ -1056,32 +1049,7 @@ namespace BtldMapEditor
         private void AddFactionClick(object sender, EventArgs e)
         {
             if (!HasDoc) return;
-            var vec = FactionVec();
-            ushort newFactionId = 0;
-            foreach (var f in FrontNav.TableItems(vec))
-            {
-                ushort id = FrontNav.MemberU16(FrontNav.ChildStruct(f, 0), 0);
-                if (id >= newFactionId) newFactionId = (ushort)(id + 1);
-            }
-            var tbl = BtlFrontJson.NewTable();
-            tbl.F[0] = FrontNav.StructFromFbs("FactionMetadata",
-                newFactionId, (ushort)1, (byte)1, (byte)0, (byte)0, (byte)0,
-                100u, 0u, 1f, 1f, 1f, 0xFFFFFFFFu, (ushort)0, (ushort)0);
-            SetOpt(tbl, 7, "u8", (byte)1);
-            SetOpt(tbl, 8, "u16", (ushort)1);
-            vec.V.Add(tbl);
-
-            var cards = FrontNav.EnsureVec(FrontNav.EnsureTable(Doc.Root, 4), 1, "table");
-            var card = BtlFrontJson.NewTable();
-            SetOpt(card, 0, "u16", newFactionId);
-            card.F[1] = BtlFrontJson.NewVector("u16");
-            cards.V.Add(card);
-
-            var limits = FrontNav.EnsureVec(FrontNav.EnsureTable(Doc.Root, 4), 3, "table");
-            var lim = BtlFrontJson.NewTable();
-            SetOpt(lim, 0, "u16", newFactionId);
-            lim.F[1] = BtlFrontJson.NewVector("u16");
-            limits.V.Add(lim);
+            if (!RunEdit("add_faction", new ScriptArgs())) return;
 
             OnDocumentLoaded();
             lbFactions.SelectedIndex = lbFactions.Items.Count - 1;
@@ -1098,19 +1066,7 @@ namespace BtldMapEditor
             ushort factionId = FrontNav.MemberU16(FrontNav.ChildStruct(faction, 0), 0);
             var confirm = MessageBox.Show($"确定要删除 势力 {factionId} 吗？", "确认删除", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
             if (confirm != DialogResult.Yes) return;
-            FrontNav.RemoveAt(vec, idx);
-
-            void DropById(BtlVector rel)
-            {
-                if (rel?.V == null) return;
-                for (int i = rel.V.Count - 1; i >= 0; i--)
-                {
-                    if (rel.V[i] is BtlTable t && FrontNav.ScalarI64(t, 0) == factionId)
-                        rel.V.RemoveAt(i);
-                }
-            }
-            DropById(FrontNav.FactionCards(Doc));
-            DropById(FrontNav.FactionLimits(Doc));
+            if (!RunEdit("delete_faction", new ScriptArgs { Index = idx })) return;
 
             OnDocumentLoaded();
             if (lbFactions.Items.Count > 0)
@@ -1131,28 +1087,10 @@ namespace BtldMapEditor
 
             var vec = FrontNav.FactionList(Doc);
             if (vec?.V != null && oldIndex < vec.V.Count && index < vec.V.Count)
-            {
-                var faction = vec.V[oldIndex];
-                vec.V.RemoveAt(oldIndex);
-                vec.V.Insert(index, faction);
-                ushort factionId = FrontNav.MemberU16(FrontNav.ChildStruct(faction as BtlTable, 0), 0);
-
-                void MoveRel(BtlVector rel)
+                if (!RunEdit("move_faction", new ScriptArgs
                 {
-                    if (rel?.V == null) return;
-                    int found = -1;
-                    for (int i = 0; i < rel.V.Count; i++)
-                    {
-                        if (rel.V[i] is BtlTable t && FrontNav.ScalarI64(t, 0) == factionId) { found = i; break; }
-                    }
-                    if (found < 0) return;
-                    var entry = rel.V[found];
-                    rel.V.RemoveAt(found);
-                    rel.V.Insert(Math.Min(index, rel.V.Count), entry);
-                }
-                MoveRel(FrontNav.FactionCards(Doc));
-                MoveRel(FrontNav.FactionLimits(Doc));
-            }
+                    Input = EditInput(("from", oldIndex), ("to", index))
+                })) return;
 
             OnDocumentLoaded();
             lbFactions.SelectedIndex = index;
@@ -1177,13 +1115,15 @@ namespace BtldMapEditor
         private void AddTargetClick(object sender, EventArgs e)
         {
             if (!HasDoc) return;
-            var tbl = BtlFrontJson.NewTable();
-            SetOpt(tbl, 0, "u16", U16(nudTargetType));
-            SetOpt(tbl, 1, "i16", I16(nudTargetValue));
-            SetOpt(tbl, 2, "u16", U16(nudTargetParam1));
-            SetOpt(tbl, 3, "u16", U16(nudTargetParam2));
-            SetOpt(tbl, 4, "u8", U8(nudTargetFlag));
-            TargetVec().V.Add(tbl);
+            if (!RunEdit("add_target", new ScriptArgs
+            {
+                Input = EditInput(
+                    ("type", U16(nudTargetType)),
+                    ("value", I16(nudTargetValue)),
+                    ("param1", U16(nudTargetParam1)),
+                    ("param2", U16(nudTargetParam2)),
+                    ("flag", U8(nudTargetFlag)))
+            })) return;
             OnDocumentLoaded();
             if (lvTargets.Items.Count > 0)
             {
@@ -1203,12 +1143,17 @@ namespace BtldMapEditor
             }
             int idx = lvTargets.SelectedIndices[0];
             if (idx < 0 || idx >= list.Count) return;
-            var t = list[idx];
-            SetOpt(t, 0, "u16", U16(nudTargetType));
-            SetOpt(t, 1, "i16", I16(nudTargetValue));
-            SetOpt(t, 2, "u16", U16(nudTargetParam1));
-            SetOpt(t, 3, "u16", U16(nudTargetParam2));
-            SetOpt(t, 4, "u8", U8(nudTargetFlag));
+            if (!RunEdit("update_target", new ScriptArgs
+            {
+                ObjectPath = "Root.stage_metadata.targets",
+                ObjectIndex = idx,
+                Input = EditInput(
+                    ("type", U16(nudTargetType)),
+                    ("value", I16(nudTargetValue)),
+                    ("param1", U16(nudTargetParam1)),
+                    ("param2", U16(nudTargetParam2)),
+                    ("flag", U8(nudTargetFlag)))
+            })) return;
             OnDocumentLoaded();
             if (idx < lvTargets.Items.Count)
             {
@@ -1230,7 +1175,7 @@ namespace BtldMapEditor
             if (idx < 0 || idx >= vec.V.Count) return;
             if (MessageBox.Show("确定要删除选中的目标条件吗？", "确认删除", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
-            FrontNav.RemoveAt(vec, idx);
+            if (!RunEdit("delete_target", new ScriptArgs { Index = idx })) return;
             OnDocumentLoaded();
             if (lvTargets.Items.Count > 0)
             {
@@ -1256,11 +1201,13 @@ namespace BtldMapEditor
         private void AddWeatherClick(object sender, EventArgs e)
         {
             if (!HasDoc) return;
-            var tbl = BtlFrontJson.NewTable();
-            SetOpt(tbl, 0, "u8", U8(nudWeatherType) ?? 0);
-            SetOpt(tbl, 1, "u16", U16(nudWeatherStart) ?? 0);
-            SetOpt(tbl, 2, "u16", U16(nudWeatherDuration) ?? 0);
-            WeatherVec().V.Add(tbl);
+            if (!RunEdit("add_weather", new ScriptArgs
+            {
+                Input = EditInput(
+                    ("type", U8(nudWeatherType)),
+                    ("start", U16(nudWeatherStart)),
+                    ("duration", U16(nudWeatherDuration)))
+            })) return;
             OnDocumentLoaded();
             if (lvWeathers.Items.Count > 0)
             {
@@ -1280,10 +1227,15 @@ namespace BtldMapEditor
             }
             int idx = lvWeathers.SelectedIndices[0];
             if (idx < 0 || idx >= list.Count) return;
-            var w = list[idx];
-            SetOpt(w, 0, "u8", U8(nudWeatherType) ?? 0);
-            SetOpt(w, 1, "u16", U16(nudWeatherStart) ?? 0);
-            SetOpt(w, 2, "u16", U16(nudWeatherDuration) ?? 0);
+            if (!RunEdit("update_weather", new ScriptArgs
+            {
+                ObjectPath = "Root.decal_info.decals",
+                ObjectIndex = idx,
+                Input = EditInput(
+                    ("type", U8(nudWeatherType)),
+                    ("start", U16(nudWeatherStart)),
+                    ("duration", U16(nudWeatherDuration)))
+            })) return;
             OnDocumentLoaded();
             if (idx < lvWeathers.Items.Count)
             {
@@ -1305,7 +1257,7 @@ namespace BtldMapEditor
             if (idx < 0 || idx >= vec.V.Count) return;
             if (MessageBox.Show("确定要删除选中的天气配置吗？", "确认删除", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
-            FrontNav.RemoveAt(vec, idx);
+            if (!RunEdit("delete_weather", new ScriptArgs { Index = idx })) return;
             OnDocumentLoaded();
             if (lvWeathers.Items.Count > 0)
             {
@@ -1332,12 +1284,14 @@ namespace BtldMapEditor
         private void AddReinforceClick(object sender, EventArgs e)
         {
             if (!HasDoc) return;
-            var tbl = BtlFrontJson.NewTable();
-            SetOpt(tbl, 0, "u16", U16(nudRpCellIdx));
-            SetOpt(tbl, 1, "u8", U8(nudRpFactionId));
-            SetOpt(tbl, 2, "bool", chkRpIsKey.Checked);
-            SetOpt(tbl, 3, "u8", U8(nudRpFlag));
-            ReinforceVec().V.Add(tbl);
+            if (!RunEdit("add_reinforce", new ScriptArgs
+            {
+                Input = EditInput(
+                    ("cell", U16(nudRpCellIdx)),
+                    ("faction", U8(nudRpFactionId)),
+                    ("is_key", chkRpIsKey.Checked),
+                    ("flag", U8(nudRpFlag)))
+            })) return;
             OnDocumentLoaded();
             if (lvReinforces.Items.Count > 0)
             {
@@ -1357,11 +1311,16 @@ namespace BtldMapEditor
             }
             int idx = lvReinforces.SelectedIndices[0];
             if (idx < 0 || idx >= list.Count) return;
-            var rp = list[idx];
-            SetOpt(rp, 0, "u16", U16(nudRpCellIdx));
-            SetOpt(rp, 1, "u8", U8(nudRpFactionId));
-            SetOpt(rp, 2, "bool", chkRpIsKey.Checked);
-            SetOpt(rp, 3, "u8", U8(nudRpFlag));
+            if (!RunEdit("update_reinforce", new ScriptArgs
+            {
+                ObjectPath = "Root.battle_info.reinforce_points",
+                ObjectIndex = idx,
+                Input = EditInput(
+                    ("cell", U16(nudRpCellIdx)),
+                    ("faction", U8(nudRpFactionId)),
+                    ("is_key", chkRpIsKey.Checked),
+                    ("flag", U8(nudRpFlag)))
+            })) return;
             OnDocumentLoaded();
             if (idx < lvReinforces.Items.Count)
             {
@@ -1383,7 +1342,7 @@ namespace BtldMapEditor
             if (idx < 0 || idx >= vec.V.Count) return;
             if (MessageBox.Show("确定要删除选中的增兵部署点吗？", "确认删除", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
-            FrontNav.RemoveAt(vec, idx);
+            if (!RunEdit("delete_reinforce", new ScriptArgs { Index = idx })) return;
             OnDocumentLoaded();
             if (lvReinforces.Items.Count > 0)
             {
@@ -1424,77 +1383,14 @@ namespace BtldMapEditor
             {
                 Cursor = Cursors.WaitCursor;
                 FrontNav.SyncGrid(Doc, mapCanvas.Cells);
-                var cells = FrontNav.RebuildCells(Doc);
-                var newCells = new List<MapCell>();
-                for (int idx = 0; idx < newW * newH; idx++)
+                if (!RunEdit("resize_map", new ScriptArgs
                 {
-                    int x = idx % newW;
-                    int y = idx / newW;
-                    int oldX = x - expandLeft;
-                    int oldY = y - expandUp;
-                    if (oldX >= 0 && oldX < oldW && oldY >= 0 && oldY < oldH)
-                    {
-                        var oldCell = cells[oldY * oldW + oldX];
-                        oldCell.Index = idx;
-                        oldCell.X = x;
-                        oldCell.Y = y;
-                        newCells.Add(oldCell);
-                    }
-                    else
-                    {
-                        newCells.Add(new MapCell
-                        {
-                            Index = idx, X = x, Y = y, Terrain = 0,
-                            Attr = FrontNav.NewAttr(0, 0, 0, 0)
-                        });
-                    }
-                }
-
-                FrontNav.SetMember(size, 0, (ushort)newW);
-                FrontNav.SetMember(size, 1, (ushort)newH);
-                ushort lm = FrontNav.MemberU16(size, 2);
-                ushort tm = FrontNav.MemberU16(size, 3);
-                ushort pw = FrontNav.MemberU16(size, 4);
-                ushort ph = FrontNav.MemberU16(size, 5);
-                FrontNav.SetMember(size, 4, (ushort)Math.Min(pw, Math.Max(0, newW - lm)));
-                FrontNav.SetMember(size, 5, (ushort)Math.Min(ph, Math.Max(0, newH - tm)));
-
-                foreach (var ev in FrontNav.TableItems(FrontNav.Events(Doc)))
-                {
-                    if (FrontNav.Child(ev, 3) != null || FrontNav.Child(ev, 4) != null) continue;
-                    var mapped = FrontNav.RemapCellIndex((int)FrontNav.ScalarI64(ev, 0), oldW, expandLeft, expandUp, newW, newH);
-                    if (mapped != null) SetOpt(ev, 0, "u16", mapped.Value);
-                }
-                var keptRp = new List<object>();
-                foreach (var rp in FrontNav.TableItems(FrontNav.ReinforcePoints(Doc)))
-                {
-                    var mapped = FrontNav.RemapCellIndex((int)FrontNav.ScalarI64(rp, 0), oldW, expandLeft, expandUp, newW, newH);
-                    if (mapped == null) continue;
-                    SetOpt(rp, 0, "u16", mapped.Value);
-                    keptRp.Add(rp);
-                }
-                var rpVec = FrontNav.ReinforcePoints(Doc);
-                if (rpVec != null)
-                {
-                    rpVec.V.Clear();
-                    foreach (var rp in keptRp) rpVec.V.Add(rp);
-                }
-                foreach (var sub in FrontNav.TableItems(FrontNav.SubRegions(Doc)))
-                {
-                    foreach (var kv in sub.F.ToList())
-                    {
-                        if (kv.Value is not BtlVector tiles || tiles.Elem != "u16") continue;
-                        var mappedTiles = new List<ushort>();
-                        foreach (var raw in FrontNav.U16Items(tiles))
-                        {
-                            var mapped = FrontNav.RemapCellIndex(raw, oldW, expandLeft, expandUp, newW, newH);
-                            if (mapped != null) mappedTiles.Add(mapped.Value);
-                        }
-                        FrontNav.SetU16Items(tiles, mappedTiles);
-                    }
-                }
-
-                FrontNav.SyncGrid(Doc, newCells);
+                    Input = EditInput(
+                        ("left", expandLeft),
+                        ("right", expandRight),
+                        ("up", expandUp),
+                        ("down", expandDown))
+                })) return;
                 mapCanvas.Document = Doc;
                 AddHistoryState();
                 _selectedCellIdx = -1;
@@ -1518,29 +1414,6 @@ namespace BtldMapEditor
             finally { Cursor = Cursors.Default; }
         }
 
-        private ushort GetNextUniqueAgentId()
-        {
-            ushort maxId = 0;
-            foreach (var agent in FrontNav.TableItems(FrontNav.Agents(Doc)))
-            {
-                ushort id = FrontNav.AgentU16(agent, 2);
-                if (id > maxId) maxId = id;
-            }
-            if (mapCanvas.Cells != null)
-            {
-                foreach (var cell in mapCanvas.Cells)
-                {
-                    if (cell.Unit == null) continue;
-                    ushort id = FrontNav.AgentU16(cell.Unit, 2);
-                    if (id > maxId) maxId = id;
-                }
-            }
-            return (ushort)(maxId + 1);
-        }
-
-        BtlTable CloneAgent(BtlTable src) => FrontNav.CloneTable(src);
-        BtlTable CloneEvent(BtlTable src) => FrontNav.CloneTable(src);
-
         private void PerformCopyAction()
         {
             if (_selectedCellIdx < 0 || _selectedCellIdx >= mapCanvas.Cells.Count) return;
@@ -1557,61 +1430,62 @@ namespace BtldMapEditor
                 _copiedTerrain = null;
                 _copiedAttr = _copiedAttrA2 = _copiedAttrA3 = null;
             }
-            _copiedUnit = cell.Unit != null ? CloneAgent(cell.Unit) : null;
-            _copiedTriggerBldg = CloneEvent(cell.TriggerBldg);
-            _copiedTriggerFort = CloneEvent(cell.TriggerFort);
+            var copied = new ScriptArgs { CellIndex = _selectedCellIdx };
+            if (!RunEdit("copy_unit", copied) || !RunEdit("copy_landmarks", copied)) return;
             statusLabel.Text = $"复制成功：已将地块 #{_selectedCellIdx} 的完整数据（地形/部队/建筑/工事）存入画笔/剪贴板";
         }
 
-        void PasteTerrainOnto(MapCell cell)
+        static object[] AttrParts(BtlStruct st)
         {
-            if (!_copiedTerrain.HasValue) return;
-            cell.Terrain = _copiedTerrain.Value;
-            cell.Attr = FrontNav.CloneStruct(_copiedAttr);
-            cell.AttrA2 = FrontNav.CloneStruct(_copiedAttrA2);
-            cell.AttrA3 = FrontNav.CloneStruct(_copiedAttrA3);
+            if (st == null) return null;
+            return new object[]
+            {
+                FrontNav.AttrU8(st, 0),
+                FrontNav.AttrU8(st, 1),
+                FrontNav.AttrI8(st, 2),
+                FrontNav.AttrI8(st, 3)
+            };
         }
 
-        void PasteUnitOnto(MapCell cell, int cellIdx)
+        bool PasteTerrainOnto(int cellIdx)
         {
-            if (_copiedUnit == null) { cell.Unit = null; return; }
-            cell.Unit = CloneAgent(_copiedUnit);
-            FrontNav.SetAgentU16(cell.Unit, 0, (ushort)cellIdx);
-            FrontNav.SetAgentU16(cell.Unit, 2, GetNextUniqueAgentId());
+            if (!_copiedTerrain.HasValue) return false;
+            return RunEdit("paste_terrain", new ScriptArgs
+            {
+                CellIndex = cellIdx,
+                Input = EditInput(
+                    ("terrain", _copiedTerrain.Value),
+                    ("decor", AttrParts(_copiedAttr)),
+                    ("main", AttrParts(_copiedAttrA2)),
+                    ("secondary", AttrParts(_copiedAttrA3)))
+            });
         }
 
-        void PasteLandmarksOnto(MapCell cell, int cellIdx)
+        bool PasteUnitOnto(int cellIdx)
         {
-            if (_copiedTriggerBldg != null)
-            {
-                cell.TriggerBldg = CloneEvent(_copiedTriggerBldg);
-                SetOpt(cell.TriggerBldg, 0, "u16", (ushort)cellIdx);
-            }
-            else cell.TriggerBldg = null;
-            if (_copiedTriggerFort != null)
-            {
-                cell.TriggerFort = CloneEvent(_copiedTriggerFort);
-                SetOpt(cell.TriggerFort, 0, "u16", (ushort)cellIdx);
-            }
-            else cell.TriggerFort = null;
+            return RunEdit("paste_unit", new ScriptArgs { CellIndex = cellIdx });
+        }
+
+        bool PasteLandmarksOnto(int cellIdx)
+        {
+            return RunEdit("paste_landmarks", new ScriptArgs { CellIndex = cellIdx });
         }
 
         private void PerformPasteAction()
         {
             if (_selectedCellIdx < 0) return;
-            var cell = mapCanvas.Cells[_selectedCellIdx];
             if (tabControlRight.SelectedTab == tabTerrainEdit)
             {
                 if (_terrainBrush != null)
                 {
-                    ApplyPaletteToCell(_selectedCellIdx, _terrainBrush.Item, _terrainBrush.Target, recordHistory: false);
+                    if (!ApplyPaletteToCell(_selectedCellIdx, _terrainBrush.Item, _terrainBrush.Target, recordHistory: false)) return;
                     CellSelectedClick(_selectedCellIdx);
                     mapCanvas.Invalidate();
                     statusLabel.Text = $"已将「{_terrainBrush.Item.Label}」应用到地块 #{_selectedCellIdx}";
                 }
                 else if (_copiedTerrain.HasValue)
                 {
-                    PasteTerrainOnto(cell);
+                    if (!PasteTerrainOnto(_selectedCellIdx)) return;
                     CellSelectedClick(_selectedCellIdx);
                     mapCanvas.Invalidate();
                     statusLabel.Text = $"粘贴成功：已将地形与属性粘贴至地块 #{_selectedCellIdx}";
@@ -1620,14 +1494,14 @@ namespace BtldMapEditor
             }
             else if (tabControlRight.SelectedTab == tabUnitEdit)
             {
-                PasteUnitOnto(cell, _selectedCellIdx);
+                if (!PasteUnitOnto(_selectedCellIdx)) return;
                 CellSelectedClick(_selectedCellIdx);
                 mapCanvas.Invalidate();
                 statusLabel.Text = $"粘贴成功：已将部队数据粘贴至地块 #{_selectedCellIdx}";
             }
             else if (tabControlRight.SelectedTab == tabBuildingEdit)
             {
-                PasteLandmarksOnto(cell, _selectedCellIdx);
+                if (!PasteLandmarksOnto(_selectedCellIdx)) return;
                 CellSelectedClick(_selectedCellIdx);
                 mapCanvas.Invalidate();
                 statusLabel.Text = $"粘贴成功：已将地标建筑与工事数据粘贴至地块 #{_selectedCellIdx}";
@@ -1638,18 +1512,17 @@ namespace BtldMapEditor
         private void PaintCell(int cellIdx)
         {
             if (cellIdx < 0 || cellIdx >= mapCanvas.Cells.Count) return;
-            var cell = mapCanvas.Cells[cellIdx];
             if (tabControlRight.SelectedTab == tabTerrainEdit)
             {
                 if (_terrainBrush != null)
                     ApplyPaletteToCell(cellIdx, _terrainBrush.Item, _terrainBrush.Target, recordHistory: false);
                 else if (_copiedTerrain.HasValue)
-                    PasteTerrainOnto(cell);
+                    PasteTerrainOnto(cellIdx);
             }
             else if (tabControlRight.SelectedTab == tabUnitEdit)
-                PasteUnitOnto(cell, cellIdx);
+                PasteUnitOnto(cellIdx);
             else if (tabControlRight.SelectedTab == tabBuildingEdit)
-                PasteLandmarksOnto(cell, cellIdx);
+                PasteLandmarksOnto(cellIdx);
         }
     }
 }

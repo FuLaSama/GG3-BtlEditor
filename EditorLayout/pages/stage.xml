@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<page id="stage">
+  <section title="回合" kind="form">
+    <field label="总回合" widget="number" type="u16" action="set_round_limit"/>
+  </section>
+  <section title="关卡目标" kind="list" bind="Root.stage_metadata.targets">
+    <columns>
+      <column header="类别" bind="target_type"/>
+      <column header="目标值" bind="target_value"/>
+      <column header="参数1" bind="param1"/>
+      <column header="参数2" bind="param2"/>
+      <column header="标志" bind="unk"/>
+    </columns>
+    <fields>
+      <field id="type" label="类别" widget="number" type="u16"/>
+      <field id="value" label="目标值" widget="number" type="i16"/>
+      <field id="param1" label="参数1" widget="number" type="u16"/>
+      <field id="param2" label="参数2" widget="number" type="u16"/>
+      <field id="flag" label="标志" widget="number" type="u8"/>
+    </fields>
+    <actions>
+      <action id="add" label="添加目标条件" script="add_target"/>
+      <action id="update" label="保存选中修改" script="update_target"/>
+      <action id="delete" label="删除选中目标" script="delete_target" confirm="确定要删除选中的目标条件吗？"/>
+    </actions>
+  </section>
+  <section title="增兵部署点" kind="list" bind="Root.battle_info.reinforce_points">
+    <columns>
+      <column header="格子索引" bind="cell_idx"/>
+      <column header="所属势力" bind="faction_id"/>
+      <column header="参数1" bind="val1"/>
+      <column header="参数2" bind="val2"/>
+    </columns>
+    <fields>
+      <field id="cell" label="格子索引" widget="number" type="u16"/>
+      <field id="faction" label="所属势力" widget="number" type="u8"/>
+      <field id="is_key" label="参数1" widget="check"/>
+      <field id="flag" label="参数2" widget="number" type="u8"/>
+    </fields>
+    <actions>
+      <action id="add" label="添加部署点" script="add_reinforce"/>
+      <action id="update" label="保存选中修改" script="update_reinforce"/>
+      <action id="delete" label="删除选中部署" script="delete_reinforce" confirm="确定要删除选中的增兵部署点吗？"/>
+    </actions>
+  </section>
+  <section title="天气" kind="list" bind="Root.decal_info.decals">
+    <columns>
+      <column header="天气类型" bind="decal_type"/>
+      <column header="起始回合" bind="x"/>
+      <column header="持续回合数" bind="y"/>
+    </columns>
+    <fields>
+      <field id="type" label="天气类型" widget="number" type="u8"/>
+      <field id="start" label="起始回合" widget="number" type="u16"/>
+      <field id="duration" label="持续回合数" widget="number" type="u16"/>
+    </fields>
+    <actions>
+      <action id="add" label="添加天气" script="add_weather"/>
+      <action id="update" label="保存选中修改" script="update_weather"/>
+      <action id="delete" label="删除选中天气" script="delete_weather" confirm="确定要删除选中的天气配置吗？"/>
+    </actions>
+  </section>
+</page>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<editorLayout format="1">
+  <tabs>
+    <tab id="stage" title="全局配置" page="pages/stage.xml"/>
+  </tabs>
+  <scripts>
+    <script src="scripts/stage.lua"/>
+    <script src="scripts/terrain.lua"/>
+    <script src="scripts/unit.lua"/>
+    <script src="scripts/site.lua"/>
+    <script src="scripts/map.lua"/>
+    <script src="scripts/country.lua"/>
+  </scripts>
+</editorLayout>

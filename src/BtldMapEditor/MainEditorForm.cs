@@ -6,8 +6,8 @@
  * 数据怎么走：
  *   打开 .btl → FrontSession.FromBtl（BtlToFront，类型来自 battle.fbs）
  *   打开 .json → FrontSession.FromJsonFile（fbs 字段名或字段 ID）
- *   右侧数字框 / 列表 → FrontNav 改 Document 的 field id
- *   画布 MapCell[] 是工作视图：改地形先改格子，保存前 SyncGrid 写回向量
+ *   右侧数字框 / 列表 → 已加载的 Lua 动作写 Document
+ *   画布 MapCell[] 是投影：脚本写完先 RebuildCells，撤销前 SyncGrid 再收格子
  *   撤销栈是一整份 BtlFront JSON 快照（不是命令队列）
  *   导出 .btl / 字段名 JSON / 字段 ID JSON
  *
@@ -33,6 +33,7 @@ using System.Windows.Forms;
 using BtldMapEditor.Front;
 using BtlCore.Fb;
 using BtlCore.Front;
+using BtlCore.Scripting;
 
 
 
@@ -462,14 +463,6 @@ namespace BtldMapEditor
 
         private BtlStruct _copiedAttrA3;
 
-        private BtlTable _copiedUnit;
-
-        private BtlTable _copiedTriggerBldg;
-
-        private BtlTable _copiedTriggerFort;
-
-
-
         public MainEditorForm()
 
         {
@@ -517,6 +510,8 @@ namespace BtldMapEditor
             fileMenu.DropDownItems.Add(new ToolStripSeparator());
             fileMenu.DropDownItems.Add(openItem);
             fileMenu.DropDownItems.Add(exportItem);
+            fileMenu.DropDownItems.Add(new ToolStripSeparator());
+            fileMenu.DropDownItems.Add(new ToolStripMenuItem("重新加载布局", null, ReloadLayoutClick));
             fileMenu.DropDownItems.Add(new ToolStripSeparator());
             fileMenu.DropDownItems.Add(exitItem);
 
@@ -3142,6 +3137,8 @@ namespace BtldMapEditor
 
             tlpStageMain.Controls.Add(tlpMeta);
 
+            CreateStageSlot(tlpStageMain);
+
 
 
             chkFog = new CheckBox { Text = "开启战争迷雾", Anchor = AnchorStyles.Left, AutoSize = true, Margin = new Padding(0, 8, 0, 0) };
@@ -3168,9 +3165,9 @@ namespace BtldMapEditor
 
             lvTargets.Columns.Add("参数2", 90);
 
-            tlpStageMain.Controls.Add(lblTargets);
+            _stageSlot.Controls.Add(lblTargets);
 
-            tlpStageMain.Controls.Add(lvTargets);
+            _stageSlot.Controls.Add(lvTargets);
 
 
 
@@ -3288,9 +3285,9 @@ namespace BtldMapEditor
 
 
 
-            tlpStageMain.Controls.Add(tlpTargetsEdit);
+            _stageSlot.Controls.Add(tlpTargetsEdit);
 
-            tlpStageMain.Controls.Add(tlpTargetsBtns);
+            _stageSlot.Controls.Add(tlpTargetsBtns);
 
             lvTargets.SelectedIndexChanged += LvTargetsSelectedIndexChanged;
 
@@ -3310,9 +3307,9 @@ namespace BtldMapEditor
 
             lvReinforces.Columns.Add("参数2", 90);
 
-            tlpStageMain.Controls.Add(lblReinforces);
+            _stageSlot.Controls.Add(lblReinforces);
 
-            tlpStageMain.Controls.Add(lvReinforces);
+            _stageSlot.Controls.Add(lvReinforces);
 
 
 
@@ -3424,9 +3421,9 @@ namespace BtldMapEditor
 
 
 
-            tlpStageMain.Controls.Add(tlpReinforcesEdit);
+            _stageSlot.Controls.Add(tlpReinforcesEdit);
 
-            tlpStageMain.Controls.Add(tlpReinforcesBtns);
+            _stageSlot.Controls.Add(tlpReinforcesBtns);
 
             lvReinforces.SelectedIndexChanged += LvReinforcesSelectedIndexChanged;
 
@@ -3442,9 +3439,9 @@ namespace BtldMapEditor
 
             lvWeathers.Columns.Add("持续回合数", 100);
 
-            tlpStageMain.Controls.Add(lblWeathers);
+            _stageSlot.Controls.Add(lblWeathers);
 
-            tlpStageMain.Controls.Add(lvWeathers);
+            _stageSlot.Controls.Add(lvWeathers);
 
 
 
@@ -3550,11 +3547,13 @@ namespace BtldMapEditor
 
 
 
-            tlpStageMain.Controls.Add(tlpWeathersEdit);
+            _stageSlot.Controls.Add(tlpWeathersEdit);
 
-            tlpStageMain.Controls.Add(tlpWeathersBtns);
+            _stageSlot.Controls.Add(tlpWeathersBtns);
 
             lvWeathers.SelectedIndexChanged += LvWeathersSelectedIndexChanged;
+
+            TryInstallStageLayout();
 
 
 
@@ -3933,6 +3932,7 @@ namespace BtldMapEditor
 
 
             ReloadStageLists();
+            _stageLayout?.Reload(Doc);
 
             RefreshCountryBtTab();
 
@@ -4261,15 +4261,12 @@ namespace BtldMapEditor
         private void SeaFlagChanged(object sender, EventArgs e)
         {
             if (_selectedCellIdx < 0 || _isUpdatingTerrainUi) return;
-            var cell = mapCanvas.Cells[_selectedCellIdx];
-            ushort terrain = cell.Terrain;
-            if (chkSeaFlag.Checked)
-                terrain = (ushort)(terrain | (2 << 8));
-            else
-                terrain = (ushort)(terrain & unchecked((ushort)~(2 << 8)));
-            cell.Terrain = terrain;
-            mapCanvas.Invalidate();
-            RefreshTerrainPaletteSelection(cell);
+            if (!RunEdit("set_sea", new ScriptArgs
+            {
+                CellIndex = _selectedCellIdx,
+                Value = chkSeaFlag.Checked
+            })) return;
+            RefreshTerrainPaletteSelection(mapCanvas.Cells[_selectedCellIdx]);
             AddHistoryState();
         }
 
@@ -4302,36 +4299,54 @@ namespace BtldMapEditor
                 ApplyPaletteToCell(idx, drag.Item, drag.Target, recordHistory: true);
         }
 
-        void ApplyPaletteToCell(int cellIdx, PaletteItem item, PaletteTarget target, bool recordHistory)
+        bool ApplyPaletteToCell(int cellIdx, PaletteItem item, PaletteTarget target, bool recordHistory)
         {
-            if (item == null || cellIdx < 0 || cellIdx >= mapCanvas.Cells.Count) return;
-            var cell = mapCanvas.Cells[cellIdx];
-            if (target == PaletteTarget.Climate)
-                ApplyClimate(cell, item);
-            else
-                ApplyLayer(cell, item, target);
-
-            mapCanvas.Invalidate();
+            if (item == null || cellIdx < 0 || cellIdx >= mapCanvas.Cells.Count) return false;
+            bool ok = target == PaletteTarget.Climate
+                ? RunEdit("apply_climate", new ScriptArgs
+                {
+                    CellIndex = cellIdx,
+                    Item = EditInput(
+                        ("sea", item.Sea == true),
+                        ("t", item.T),
+                        ("variant", item.Variant))
+                })
+                : RunEdit("apply_layer", new ScriptArgs
+                {
+                    CellIndex = cellIdx,
+                    Item = EditInput(
+                        ("layer", TerrainLayerKey(target)),
+                        ("terrain_id", item.TerrainId ?? 0),
+                        ("variant", item.Variant),
+                        ("dx", item.Dx),
+                        ("dy", item.Dy))
+                });
+            if (!ok) return false;
             if (cellIdx == _selectedCellIdx)
             {
+                var cell = mapCanvas.Cells[cellIdx];
                 RefreshTerrainPaletteSelection(cell);
                 RefreshTerrainOffsetUi(cell);
             }
             if (recordHistory)
                 AddHistoryState();
+            return true;
         }
 
         void ClearPaletteLayer(int cellIdx, PaletteTarget target, bool recordHistory)
         {
             if (cellIdx < 0 || cellIdx >= mapCanvas.Cells.Count) return;
-            var cell = mapCanvas.Cells[cellIdx];
-            if (target == PaletteTarget.Climate)
-                cell.Terrain = (ushort)(cell.Terrain & unchecked((ushort)~(2 << 8)));
-            else
-                SetLayer(cell, target, null);
-            mapCanvas.Invalidate();
+            bool ok = target == PaletteTarget.Climate
+                ? RunEdit("set_sea", new ScriptArgs { CellIndex = cellIdx, Value = false })
+                : RunEdit("clear_layer", new ScriptArgs
+                {
+                    CellIndex = cellIdx,
+                    Input = EditInput(("layer", TerrainLayerKey(target)))
+                });
+            if (!ok) return;
             if (cellIdx == _selectedCellIdx)
             {
+                var cell = mapCanvas.Cells[cellIdx];
                 RefreshTerrainPaletteSelection(cell);
                 RefreshTerrainOffsetUi(cell);
             }
@@ -4349,14 +4364,6 @@ namespace BtldMapEditor
             if (name == "装饰") return PaletteTarget.Decor;
             return PaletteTarget.Main;
         }
-
-        static int LayerBit(PaletteTarget target)
-        {
-            return target == PaletteTarget.Decor ? 4 : target == PaletteTarget.Main ? 8 : 16;
-        }
-
-
-
 
         void MapCanvasMouseDown(object sender, MouseEventArgs e)
         {

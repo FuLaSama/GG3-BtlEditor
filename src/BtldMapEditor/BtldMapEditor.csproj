@@ -14,6 +14,8 @@
   <ItemGroup>
     <!-- 正式 BtlCore：BTL↔Front。显示用名表/贴图在本工程内。 -->
     <ProjectReference Include="..\BtlCore\BtlCore.csproj" />
+    <ProjectReference Include="..\BtlScriptHost\BtlScriptHost.csproj" />
+    <EditorLayoutFiles Include="..\..\EditorLayout\**\*.*" />
     <None Include="..\..\schema\battle.fbs" Link="battle.fbs" CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\..\schema\battle.fbs')" />
     <GameDataFiles Include="..\..\GameData\**\*.*" />
     <EditorPaletteFiles Include="..\..\地形贴图相关\编辑器贴图\**\*.*" Condition="Exists('..\..\地形贴图相关\编辑器贴图\catalog.json')" />
@@ -22,6 +24,7 @@
 
   <Target Name="CopyGameData" AfterTargets="Build">
     <Copy SourceFiles="@(GameDataFiles)" DestinationFolder="$(OutputPath)GameData\%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(EditorLayoutFiles)" DestinationFolder="$(OutputPath)EditorLayout\%(RecursiveDir)" SkipUnchangedFiles="true" Condition="'@(EditorLayoutFiles)' != ''" />
     <Copy SourceFiles="@(EditorPaletteFiles)" DestinationFolder="$(OutputPath)GameData\EditorPalette\%(RecursiveDir)" SkipUnchangedFiles="true" Condition="'@(EditorPaletteFiles)' != ''" />
     <Copy SourceFiles="@(EditorUnitIconFiles)" DestinationFolder="$(OutputPath)GameData\EditorPalette\UnitIcons\%(RecursiveDir)" SkipUnchangedFiles="true" Condition="'@(EditorUnitIconFiles)' != ''" />
   </Target>

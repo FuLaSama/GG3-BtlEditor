@@ -321,8 +321,15 @@ namespace BtlCore.Front
                 return b;
             if (val.GetValueKind() == JsonValueKind.String)
                 return val.GetValue<string>();
-            if (val.TryGetValue(out long l)) return l;
-            if (val.TryGetValue(out double d)) return d;
+            if (val.GetValueKind() == JsonValueKind.Number)
+            {
+                if (val.TryGetValue(out long l)) return l;
+                if (val.TryGetValue(out double d)) return d;
+                // JsonValue 里实际装着 byte/sbyte 时，TryGetValue<long> 会失败，ToString 又只是 "5"。
+                string raw = val.ToString();
+                if (long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out long n)) return n;
+                if (double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double x)) return x;
+            }
             return val.ToString();
         }
     }

@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using BtlCore.Front;
+using BtlCore.Scripting;
 using BtldMapEditor.Front;
 
 namespace BtldMapEditor
@@ -11,15 +12,6 @@ namespace BtldMapEditor
     /// </summary>
     public partial class MainEditorForm
     {
-        /// <summary>保证 Root/10 存在、elem=u8、enc=country_ai_bt。新建树时用。</summary>
-        BtlVector CountryBtVec()
-        {
-            if (!HasDoc) return null;
-            var vec = FrontNav.EnsureVec(Doc.Root, 10, "u8");
-            vec.Enc = "country_ai_bt";
-            return vec;
-        }
-
         static JsonObject AsJsonObj(object v) => v as JsonObject;
 
         static string JStr(JsonObject o, string key)
@@ -37,26 +29,6 @@ namespace BtldMapEditor
             return null;
         }
 
-        static void JSetStr(JsonObject o, string key, string value)
-        {
-            if (string.IsNullOrWhiteSpace(value)) o.Remove(key);
-            else o[key] = value.Trim();
-        }
-
-        static void JSetInt(JsonObject o, string key, int? value)
-        {
-            if (value == null) o.Remove(key);
-            else o[key] = value.Value;
-        }
-
-        static JsonArray JNodes(JsonObject o)
-        {
-            if (o["node"] is JsonArray a) return a;
-            var n = new JsonArray();
-            o["node"] = n;
-            return n;
-        }
-
         static List<int> JIntList(JsonObject o, string key)
         {
             var list = new List<int>();
@@ -72,18 +44,6 @@ namespace BtldMapEditor
                 if (item is JsonValue v && v.TryGetValue(out int n)) list.Add(n);
             }
             return list;
-        }
-
-        static void JSetIntList(JsonObject o, string key, List<int> list)
-        {
-            if (list == null || list.Count == 0)
-            {
-                o.Remove(key);
-                return;
-            }
-            var arr = new JsonArray();
-            foreach (var n in list) arr.Add(n);
-            o[key] = arr;
         }
 
         /// <summary>用向量里现成的 JsonObject 填列表，不再反序列化成另一套类。</summary>
@@ -170,6 +130,8 @@ namespace BtldMapEditor
             return tn;
         }
 
+        static int JsonChildCount(JsonObject obj) => obj?["node"] is JsonArray arr ? arr.Count : 0;
+
         static List<int> ParseBtIntList(string text)
         {
             var list = new List<int>();
@@ -184,21 +146,7 @@ namespace BtldMapEditor
         private void AddBtTreeClick(object sender, EventArgs e)
         {
             if (!HasDoc) return;
-            var vec = CountryBtVec();
-            int nextId = 1;
-            foreach (var item in vec.V)
-            {
-                int id = JInt(AsJsonObj(item), "btid") ?? 0;
-                if (id >= nextId) nextId = id + 1;
-            }
-            vec.V.Add(new JsonObject
-            {
-                ["btid"] = nextId,
-                ["name"] = "新行为树",
-                ["agent"] = "CBTCountryAgent",
-                ["class"] = "bt",
-                ["node"] = new JsonArray()
-            });
+            if (!RunEdit("add_tree", new ScriptArgs())) return;
             RefreshCountryBtTab();
             if (lvBtTrees.Items.Count > 0)
                 lvBtTrees.Items[lvBtTrees.Items.Count - 1].Selected = true;
@@ -212,9 +160,8 @@ namespace BtldMapEditor
                 MessageBox.Show("请先在“行为树列表”中选择一棵行为树。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
-            var kids = JNodes(tree);
-            kids.Add(new JsonObject { ["class"] = "seq", ["node"] = new JsonArray() });
-            int rootIndex = kids.Count - 1;
+            int rootIndex = JsonChildCount(tree);
+            if (!RunEdit("add_root", new ScriptArgs { Index = treeIndex })) return;
             RefreshCountryBtTab();
             if (lvBtTrees.Items.Count > treeIndex)
                 lvBtTrees.Items[treeIndex].Selected = true;
@@ -229,15 +176,19 @@ namespace BtldMapEditor
                 MessageBox.Show("请先在“行为树列表”中选择一棵行为树。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
-            if (tvBtNodes.SelectedNode?.Tag is not JsonObject parent)
+            if (tvBtNodes.SelectedNode?.Tag is not JsonObject)
             {
                 MessageBox.Show("请先在“节点树”中选择一个节点，再添加子节点。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
-            var kids = JNodes(parent);
-            kids.Add(new JsonObject { ["class"] = "act" });
             var path = GetBtNodePath(tvBtNodes.SelectedNode);
-            path.Add(kids.Count - 1);
+            int childIndex = JsonChildCount(tvBtNodes.SelectedNode.Tag as JsonObject);
+            if (!RunEdit("add_child", new ScriptArgs
+            {
+                Index = treeIndex,
+                Input = EditInput(("path", EditList(path)))
+            })) return;
+            path.Add(childIndex);
             RefreshCountryBtTab();
             if (lvBtTrees.Items.Count > treeIndex)
                 lvBtTrees.Items[treeIndex].Selected = true;
@@ -258,16 +209,20 @@ namespace BtldMapEditor
                 MessageBox.Show("请先在“节点树”中选中一个根节点树。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
-            var kids = JNodes(tree);
+            int childCount = JsonChildCount(tree);
             int rootIndex = selected.Index;
-            if (rootIndex < 0 || rootIndex >= kids.Count) return;
+            if (rootIndex < 0 || rootIndex >= childCount) return;
             if (MessageBox.Show("确定要删除选中的节点树吗？", "确认删除", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
-            kids.RemoveAt(rootIndex);
+            if (!RunEdit("delete_child", new ScriptArgs
+            {
+                Index = treeIndex,
+                Input = EditInput(("index", rootIndex))
+            })) return;
             RefreshCountryBtTab();
             if (lvBtTrees.Items.Count > treeIndex)
                 lvBtTrees.Items[treeIndex].Selected = true;
-            int selectIndex = Math.Min(rootIndex, kids.Count - 1);
+            int selectIndex = Math.Min(rootIndex, childCount - 2);
             if (selectIndex >= 0) SelectBtNodePath(treeIndex, selectIndex);
             AddHistoryState();
         }
@@ -285,19 +240,23 @@ namespace BtldMapEditor
                 MessageBox.Show("请先在“节点树”中选中一个子节点。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
-            var kids = JNodes(parent);
+            int childCount = JsonChildCount(parent);
             int childIndex = selected.Index;
-            if (childIndex < 0 || childIndex >= kids.Count) return;
+            if (childIndex < 0 || childIndex >= childCount) return;
             if (MessageBox.Show("确定要删除选中的节点吗？", "确认删除", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
             var parentPath = GetBtNodePath(selected.Parent);
-            kids.RemoveAt(childIndex);
+            if (!RunEdit("delete_child", new ScriptArgs
+            {
+                Index = treeIndex,
+                Input = EditInput(("path", EditList(parentPath)), ("index", childIndex))
+            })) return;
             RefreshCountryBtTab();
             if (lvBtTrees.Items.Count > treeIndex)
                 lvBtTrees.Items[treeIndex].Selected = true;
-            if (kids.Count > 0)
+            if (childCount > 1)
             {
-                parentPath.Add(Math.Min(childIndex, kids.Count - 1));
+                parentPath.Add(Math.Min(childIndex, childCount - 2));
                 SelectBtNodePath(treeIndex, parentPath.ToArray());
             }
             else if (parentPath.Count > 0)
@@ -341,7 +300,7 @@ namespace BtldMapEditor
             if (idx < 0 || idx >= vec.V.Count) return;
             if (MessageBox.Show("确定要删除选中的行为树吗？", "确认删除", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
-            vec.V.RemoveAt(idx);
+            if (!RunEdit("delete_tree", new ScriptArgs { Index = idx })) return;
             RefreshCountryBtTab();
             if (lvBtTrees.Items.Count > 0)
                 lvBtTrees.Items[Math.Min(idx, lvBtTrees.Items.Count - 1)].Selected = true;
@@ -351,22 +310,25 @@ namespace BtldMapEditor
         /// <summary>把当前树头和选中节点的控件值写回 JsonObject（就在 Document 上）。</summary>
         private void SaveBtTreeClick(object sender, EventArgs e)
         {
-            if (!TryGetSelectedBtTree(out var tree, out int idx)) return;
-            JSetInt(tree, "btid", (int)nudBtTid.Value);
-            JSetInt(tree, "id", nudBtId.NullableValue.HasValue ? (int)nudBtId.NullableValue.Value : (int?)null);
-            JSetStr(tree, "name", txtBtName.Text);
-            JSetStr(tree, "agent", txtBtAgent.Text);
-            JSetStr(tree, "class", txtBtClass.Text);
-            if (tvBtNodes.SelectedNode?.Tag is JsonObject node)
+            if (!TryGetSelectedBtTree(out _, out int idx)) return;
+            var input = EditInput(
+                ("btid", (int)nudBtTid.Value),
+                ("id", nudBtId.NullableValue.HasValue ? (int)nudBtId.NullableValue.Value : null),
+                ("name", txtBtName.Text),
+                ("agent", txtBtAgent.Text),
+                ("class", txtBtClass.Text));
+            if (tvBtNodes.SelectedNode?.Tag is JsonObject)
             {
-                JSetInt(node, "id", nudBtNodeId.NullableValue.HasValue ? (int)nudBtNodeId.NullableValue.Value : (int?)null);
-                JSetStr(node, "class", txtBtNodeClass.Text);
-                JSetStr(node, "method", txtBtMethod.Text);
-                JSetIntList(node, "params", ParseBtIntList(txtBtParams.Text));
-                JSetIntList(node, "rounds", ParseBtIntList(txtBtRounds.Text));
-                JSetInt(node, "result", nudBtResult.NullableValue.HasValue ? (int)nudBtResult.NullableValue.Value : (int?)null);
-                JSetInt(node, "count", nudBtCount.NullableValue.HasValue ? (int)nudBtCount.NullableValue.Value : (int?)null);
+                input["path"] = EditList(GetBtNodePath(tvBtNodes.SelectedNode));
+                input["node_id"] = nudBtNodeId.NullableValue.HasValue ? (int)nudBtNodeId.NullableValue.Value : null;
+                input["node_class"] = txtBtNodeClass.Text;
+                input["method"] = txtBtMethod.Text;
+                input["params"] = EditList(ParseBtIntList(txtBtParams.Text));
+                input["rounds"] = EditList(ParseBtIntList(txtBtRounds.Text));
+                input["result"] = nudBtResult.NullableValue.HasValue ? (int)nudBtResult.NullableValue.Value : null;
+                input["count"] = nudBtCount.NullableValue.HasValue ? (int)nudBtCount.NullableValue.Value : null;
             }
+            if (!RunEdit("save_bt", new ScriptArgs { Index = idx, Input = input })) return;
             RefreshCountryBtTab();
             if (idx < lvBtTrees.Items.Count)
                 lvBtTrees.Items[idx].Selected = true;

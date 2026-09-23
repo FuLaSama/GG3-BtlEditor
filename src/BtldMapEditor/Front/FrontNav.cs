@@ -43,27 +43,10 @@ namespace BtldMapEditor.Front
         }
 
         /// <summary>没有这张子表就新建空表并挂上。用户点「加一项」时会走到这里。</summary>
-        public static BtlTable EnsureTable(BtlTable parent, int id)
-        {
-            if (parent == null) return null;
-            if (parent.F.TryGetValue(id, out var n) && n is BtlTable t) return t;
-            var created = BtlFrontJson.NewTable();
-            parent.F[id] = created;
-            return created;
-        }
+        public static BtlTable EnsureTable(BtlTable parent, int id) => FrontEdit.EnsureTable(parent, id);
 
-        public static BtlVector EnsureVec(BtlTable parent, int id, string elem)
-        {
-            if (parent == null) return null;
-            if (parent.F.TryGetValue(id, out var n) && n is BtlVector v)
-            {
-                if (string.IsNullOrEmpty(v.Elem)) v.Elem = elem;
-                return v;
-            }
-            var created = BtlFrontJson.NewVector(elem);
-            parent.F[id] = created;
-            return created;
-        }
+        public static BtlVector EnsureVec(BtlTable parent, int id, string elem) =>
+            FrontEdit.EnsureVec(parent, id, elem);
 
         // —— Root 及常用子表：数字与 schema/battle.fbs 的 id 一致 ——
         public static BtlTable Map(BtlFrontDocument doc) => Child(Root(doc), 1);
@@ -120,12 +103,8 @@ namespace BtldMapEditor.Front
 
         public static bool MemberExists(BtlStruct st, int i) => st != null && i >= 0 && i < st.V.Count;
 
-        public static void SetMember(BtlStruct st, int i, object value)
-        {
-            if (st == null || i < 0) return;
-            while (st.V.Count <= i) st.V.Add(0);
-            st.V[i] = value ?? 0;
-        }
+        public static void SetMember(BtlStruct st, int i, object value) =>
+            FrontEdit.SetMember(st, i, value);
 
         public static bool Has(BtlTable tbl, int id) => tbl != null && tbl.F.ContainsKey(id);
 
@@ -148,23 +127,11 @@ namespace BtldMapEditor.Front
         }
 
         /// <summary>用户改过才写入。value==null 则删槽（恢复 FB 缺省）。写成 0 也会留下这个槽。</summary>
-        public static void SetScalar(BtlTable tbl, int id, string t, object value)
-        {
-            if (tbl == null) return;
-            if (value == null)
-            {
-                tbl.F.Remove(id);
-                return;
-            }
-            tbl.F[id] = BtlFrontJson.Scalar(t, value);
-        }
+        public static void SetScalar(BtlTable tbl, int id, string t, object value) =>
+            FrontEdit.SetScalar(tbl, id, t, value);
 
-        public static void SetChild(BtlTable tbl, int id, BtlNode node)
-        {
-            if (tbl == null) return;
-            if (node == null) tbl.F.Remove(id);
-            else tbl.F[id] = node;
-        }
+        public static void SetChild(BtlTable tbl, int id, BtlNode node) =>
+            FrontEdit.SetField(tbl, id, node);
 
         public static BtlStruct EnsureAgentInfo(BtlTable agent)
         {
@@ -206,22 +173,20 @@ namespace BtldMapEditor.Front
         public static void SetU16Items(BtlVector vec, IEnumerable<ushort> items)
         {
             if (vec == null) return;
-            vec.V.Clear();
-            if (items == null) return;
-            foreach (var x in items) vec.V.Add(x);
+            FrontEdit.Fill(vec, items?.Cast<object>());
         }
 
         public static void RemoveAt(BtlVector vec, int index)
         {
             if (vec?.V == null || index < 0 || index >= vec.V.Count) return;
-            vec.V.RemoveAt(index);
+            FrontEdit.RemoveAt(vec, index);
         }
 
         public static void Insert(BtlVector vec, int index, object item)
         {
             if (vec?.V == null || item == null) return;
-            if (index < 0 || index > vec.V.Count) vec.V.Add(item);
-            else vec.V.Insert(index, item);
+            if (index < 0 || index > vec.V.Count) index = vec.V.Count;
+            FrontEdit.Insert(vec, index, item);
         }
 
         static void PadStruct(BtlStruct st, string structName)
@@ -232,28 +197,12 @@ namespace BtldMapEditor.Front
         }
 
         /// <summary>按 battle.fbs 的 struct 成员列表建节点；values 不足的用类型零值补齐。</summary>
-        public static BtlStruct StructFromFbs(string structName, params object[] values)
-        {
-            if (SoftSchema.TryStructMembers(structName, out var members))
-            {
-                var st = BtlFrontJson.NewStruct();
-                for (int i = 0; i < members.Length; i++)
-                {
-                    object v = i < values.Length && values[i] != null
-                        ? values[i]
-                        : SoftSchema.DefaultValue(members[i].T);
-                    st.V.Add(v);
-                }
-                return st;
-            }
-            return BtlFrontJson.NewStruct(values);
-        }
+        public static BtlStruct StructFromFbs(string structName, params object[] values) =>
+            FrontEdit.StructFromFbs(structName, values);
 
-        public static BtlStruct CloneStruct(BtlStruct st) =>
-            st == null ? null : BtlFrontJson.Clone(st) as BtlStruct;
+        public static BtlStruct CloneStruct(BtlStruct st) => FrontEdit.CloneStruct(st);
 
-        public static BtlTable CloneTable(BtlTable tbl) =>
-            tbl == null ? null : BtlFrontJson.Clone(tbl) as BtlTable;
+        public static BtlTable CloneTable(BtlTable tbl) => FrontEdit.CloneTable(tbl);
 
         public static BtlStruct EnsureFactionInfo(BtlTable faction)
         {
@@ -276,14 +225,8 @@ namespace BtldMapEditor.Front
             return ToI64(v) != 0;
         }
 
-        public static ushort? RemapCellIndex(int oldIdx, int oldW, int expandLeft, int expandUp, int newW, int newH)
-        {
-            if (oldIdx < 0 || oldW <= 0) return null;
-            int x = oldIdx % oldW + expandLeft;
-            int y = oldIdx / oldW + expandUp;
-            if (x < 0 || y < 0 || x >= newW || y >= newH) return null;
-            return (ushort)(y * newW + x);
-        }
+        public static ushort? RemapCellIndex(int oldIdx, int oldW, int expandLeft, int expandUp, int newW, int newH) =>
+            FrontEdit.RemapCellIndex(oldIdx, oldW, expandLeft, expandUp, newW, newH);
 
         public static byte AttrU8(BtlStruct st, int i) => (byte)MemberI64(st, i);
         public static sbyte AttrI8(BtlStruct st, int i) => unchecked((sbyte)(byte)MemberI64(st, i));
@@ -294,35 +237,15 @@ namespace BtldMapEditor.Front
         public static BtlTable NewAgent(ushort cellIdx, ushort faction, ushort agentId, ushort unitId,
             ushort stack, ushort val5, ushort hp, ushort maxHp)
         {
-            var tbl = BtlFrontJson.NewTable();
-            tbl.F[0] = StructFromFbs("AgentInfo", cellIdx, faction, agentId, unitId, stack, val5, hp, maxHp);
-            return tbl;
+            return UnitEdits.Create(cellIdx, faction, agentId, unitId, stack, val5, hp, maxHp);
         }
 
         public static BtlTable NewBuildingEvent(ushort tile, ushort buildingId, ushort val1, byte val2,
-            byte? owner, sbyte? dx, sbyte? dy, byte? field6)
-        {
-            var ev = BtlFrontJson.NewTable();
-            SetScalar(ev, 0, "u16", tile);
-            var detail = BtlFrontJson.NewTable();
-            detail.F[0] = StructFromFbs("BuildingData", val1, buildingId, val2, owner ?? 0, dx ?? 0, dy ?? 0);
-            detail.F[2] = BtlFrontJson.NewTable();
-            detail.F[4] = BtlFrontJson.NewTable();
-            if (field6 != null) SetScalar(detail, 6, "u8", field6);
-            ev.F[3] = detail;
-            return ev;
-        }
+            byte? owner, sbyte? dx, sbyte? dy, byte? field6) =>
+            SiteEdits.CreateBuilding(tile, buildingId, val1, val2, owner, dx, dy, field6);
 
-        public static BtlTable NewFortEvent(ushort tile, byte fortId, byte field3)
-        {
-            var ev = BtlFrontJson.NewTable();
-            SetScalar(ev, 0, "u16", tile);
-            var detail = BtlFrontJson.NewTable();
-            SetScalar(detail, 0, "u8", fortId);
-            SetScalar(detail, 3, "u8", field3);
-            ev.F[4] = detail;
-            return ev;
-        }
+        public static BtlTable NewFortEvent(ushort tile, byte fortId, byte field3) =>
+            SiteEdits.CreateFort(tile, fortId, field3);
 
         public static BtlTable BuildingDetail(BtlTable ev) => Child(ev, 3);
         public static BtlTable FortDetail(BtlTable ev) => Child(ev, 4);
@@ -419,8 +342,7 @@ namespace BtldMapEditor.Front
             int height = (int)MemberU16(size, 1);
             if (width <= 0 || height <= 0) return cells;
 
-            var tiles = Tiles(doc);
-            var attrs = Attrs(doc);
+            var terrain = TerrainEdits.Project(doc);
             var agents = TableItems(Agents(doc));
             var events = TableItems(Events(doc));
 
@@ -440,25 +362,10 @@ namespace BtldMapEditor.Front
                 if (Child(ev, 4) != null) fortByCell[idx] = ev;
             }
 
-            int attrIndex = 0;
-            int attrCount = attrs?.V?.Count ?? 0;
-            int tileCount = tiles?.V?.Count ?? 0;
-            int total = width * height;
+            int total = terrain.Count;
             for (int i = 0; i < total; i++)
             {
-                ushort terrain = 9001;
-                if (i < tileCount) terrain = (ushort)ToI64(tiles.V[i]);
-                byte v6 = (byte)(terrain >> 8);
-
-                BtlStruct a1 = null, a2 = null, a3 = null;
-                if ((v6 & 4) != 0 && attrIndex < attrCount)
-                    a1 = attrs.V[attrIndex++] as BtlStruct;
-                if ((v6 & 8) != 0 && attrIndex < attrCount)
-                    a2 = attrs.V[attrIndex++] as BtlStruct;
-                if ((v6 & 0x10) != 0 && attrIndex < attrCount)
-                    a3 = attrs.V[attrIndex++] as BtlStruct;
-                if (a1 == null) a1 = NewAttr(0, 0, 0, 0);
-
+                var tile = terrain[i];
                 agentsByCell.TryGetValue(i, out var unit);
                 bldgByCell.TryGetValue(i, out var bldg);
                 fortByCell.TryGetValue(i, out var fort);
@@ -468,10 +375,10 @@ namespace BtldMapEditor.Front
                     Index = i,
                     X = i % width,
                     Y = i / width,
-                    Terrain = terrain,
-                    Attr = a1,
-                    AttrA2 = a2,
-                    AttrA3 = a3,
+                    Terrain = tile.Terrain,
+                    Attr = tile.Decor,
+                    AttrA2 = tile.Main,
+                    AttrA3 = tile.Secondary,
                     Unit = unit,
                     TriggerBldg = bldg,
                     TriggerFort = fort
@@ -487,75 +394,40 @@ namespace BtldMapEditor.Front
         public static void SyncGrid(BtlFrontDocument doc, IList<MapCell> cells)
         {
             if (doc?.Root == null || cells == null || cells.Count == 0) return;
-            var map = EnsureTable(doc.Root, 1);
-            var tiles = EnsureVec(map, 2, "u16");
-            var attrs = EnsureVec(map, 3, "struct");
-            tiles.V.Clear();
-            attrs.V.Clear();
+            var views = new List<TerrainEdits.Cell>(cells.Count);
             foreach (var cell in cells)
             {
-                tiles.V.Add(cell.Terrain);
-                byte v6 = (byte)(cell.Terrain >> 8);
-                if ((v6 & 4) != 0) attrs.V.Add(cell.Attr ?? NewAttr(0, 0, 0, 0));
-                if ((v6 & 8) != 0) attrs.V.Add(cell.AttrA2 ?? NewAttr(0, 0, 0, 0));
-                if ((v6 & 0x10) != 0) attrs.V.Add(cell.AttrA3 ?? NewAttr(0, 0, 0, 0));
+                views.Add(new TerrainEdits.Cell
+                {
+                    Terrain = cell.Terrain,
+                    Decor = cell.Attr,
+                    Main = cell.AttrA2,
+                    Secondary = cell.AttrA3,
+                });
             }
+            TerrainEdits.Store(doc, views);
 
-            var ai = EnsureTable(doc.Root, 6);
-            var agentsVec = EnsureVec(ai, 0, "table");
-            int total = cells.Count;
-            var onGrid = new HashSet<BtlTable>();
-            var ordered = new List<BtlTable>();
-            foreach (var cell in cells)
-            {
-                if (cell.Unit == null) continue;
-                SetAgentU16(cell.Unit, 0, (ushort)cell.Index);
-                onGrid.Add(cell.Unit);
-            }
-            foreach (var existing in TableItems(agentsVec))
-            {
-                bool keep = onGrid.Contains(existing);
-                bool offMap = AgentU16(existing, 0) >= total;
-                if (keep || offMap)
-                {
-                    ordered.Add(existing);
-                    onGrid.Remove(existing);
-                }
-            }
-            foreach (var extra in onGrid) ordered.Add(extra);
-            agentsVec.V.Clear();
-            foreach (var a in ordered) agentsVec.V.Add(a);
+            var units = new List<BtlTable>(cells.Count);
+            foreach (var cell in cells) units.Add(cell.Unit);
+            UnitEdits.SyncAgents(doc, units);
 
-            var trig = EnsureTable(doc.Root, 5);
-            var eventsVec = EnsureVec(trig, 0, "table");
-            var keptEvents = new List<BtlTable>();
-            var gridEvents = new HashSet<BtlTable>();
+            var buildings = new List<BtlTable>(cells.Count);
+            var forts = new List<BtlTable>(cells.Count);
+            int max = 0;
+            foreach (var cell in cells)
+                if (cell.Index > max) max = cell.Index;
+            for (int i = 0; i <= max; i++)
+            {
+                buildings.Add(null);
+                forts.Add(null);
+            }
             foreach (var cell in cells)
             {
-                if (cell.TriggerBldg != null)
-                {
-                    SetScalar(cell.TriggerBldg, 0, "u16", (ushort)cell.Index);
-                    gridEvents.Add(cell.TriggerBldg);
-                }
-                if (cell.TriggerFort != null)
-                {
-                    SetScalar(cell.TriggerFort, 0, "u16", (ushort)cell.Index);
-                    gridEvents.Add(cell.TriggerFort);
-                }
+                if (cell.Index < 0 || cell.Index >= buildings.Count) continue;
+                buildings[cell.Index] = cell.TriggerBldg;
+                forts[cell.Index] = cell.TriggerFort;
             }
-            foreach (var ev in TableItems(eventsVec))
-            {
-                bool on = gridEvents.Contains(ev);
-                bool script = Child(ev, 3) == null && Child(ev, 4) == null;
-                if (on || script)
-                {
-                    keptEvents.Add(ev);
-                    gridEvents.Remove(ev);
-                }
-            }
-            foreach (var extra in gridEvents) keptEvents.Add(extra);
-            eventsVec.V.Clear();
-            foreach (var ev in keptEvents) eventsVec.V.Add(ev);
+            SiteEdits.SyncEvents(doc, buildings, forts);
         }
     }
 

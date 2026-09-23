@@ -9,7 +9,7 @@
  * 读 BTL 用的 SoftSchema 仍会自己找 battle.fbs，和这边的显示开关无关。
  * 操作尽量跟 regedit 一样：左边单击只选中并刷新右侧，双击或 +/- 才展开；
  * 右边双击/回车：能进的项（table/vector/struct）就进入，标量则弹出修改；Backspace 回上一级。
- * 右键增删尾部字段/向量元素。改的就是内存树，触发 DataChanged 后主窗体应 RebuildCells。
+ * 右键增删尾部字段/向量元素。改值都进 FrontEdit，触发 DataChanged 后主窗体应 RebuildCells。
  *
  * 缺省槽（vtable 未写出）和写出的 0 不是一回事：
  *   标量 / bool 缺省 → 类型仍是 u16/bool，内容显示 0/false（灰字 = 未写出，游戏读取为默认 0）
@@ -883,7 +883,7 @@ namespace BtldMapEditor.Front
                             if (MessageBox.Show($"确定删除 struct 尾部成员 #{vt.Key}？", "确认删除",
                                     MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                                 return;
-                            st.V.RemoveAt(vt.Key);
+                            if (!TryFrontEdit(() => FrontEdit.RemoveStructTail(st, vt.Key))) return;
                             NotifyChanged(refreshTree: false);
                         };
                         cms.Items.Add(del);
@@ -936,7 +936,7 @@ namespace BtldMapEditor.Front
             var created = ShowAddFieldDialog(tbl, vt.Key, lockId: true,
                 SuggestedPickerType(parentSchema, vt.Key), SuggestedVectorElem(parentSchema, vt.Key));
             if (created == null) return;
-            tbl.F[created.Value.fieldId] = created.Value.node;
+            if (!TryFrontEdit(() => FrontEdit.SetField(tbl, created.Value.fieldId, created.Value.node))) return;
             NotifyChanged(refreshTree: IsNavigableNode(created.Value.node));
         }
 
@@ -947,7 +947,7 @@ namespace BtldMapEditor.Front
             if (MessageBox.Show($"确定要将字段 [{name}] (ID: {vt.Key}) 恢复为缺省吗？\n标量会从文件里拿掉（读取仍为 0）；表/向量/字符串会变成 NULL。", "确认清空",
                     MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 return;
-            tbl.F.Remove(vt.Key);
+            if (!TryFrontEdit(() => FrontEdit.SetField(tbl, vt.Key, null))) return;
             NotifyChanged(refreshTree: true);
         }
 
@@ -966,7 +966,7 @@ namespace BtldMapEditor.Front
                     $"确定要彻底删除尾部字段 [{name}] (Field ID: {vt.Key}) 吗？\n删除后该 id 不再出现在表中。",
                     "确认删除字段", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
-            tbl.F.Remove(vt.Key);
+            if (!TryFrontEdit(() => FrontEdit.SetField(tbl, vt.Key, null))) return;
             NotifyChanged(refreshTree: true);
         }
 
@@ -976,7 +976,7 @@ namespace BtldMapEditor.Front
             if (MessageBox.Show($"确定要从数组 Vector 中彻底删除索引为 #{idx} 的元素吗？",
                     "确认删除数组元素", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
-            vec.V.RemoveAt(idx);
+            if (!TryFrontEdit(() => FrontEdit.RemoveAt(vec, idx))) return;
             NotifyChanged(refreshTree: true);
         }
 
@@ -995,7 +995,7 @@ namespace BtldMapEditor.Front
                 var created = ShowAddFieldDialog(tbl, nextId, lockId: false,
                     SuggestedPickerType(tag.SchemaType, nextId), SuggestedVectorElem(tag.SchemaType, nextId));
                 if (created == null) return;
-                tbl.F[created.Value.fieldId] = created.Value.node;
+                if (!TryFrontEdit(() => FrontEdit.SetField(tbl, created.Value.fieldId, created.Value.node))) return;
                 NotifyChanged(refreshTree: true);
             }
             else if (tag.Target is BtlVector vec)
@@ -1008,7 +1008,8 @@ namespace BtldMapEditor.Front
                 }
                 object elem = ShowAddVectorItemDialog(vec);
                 if (elem == null) return;
-                vec.V.Add(elem is BtlNode || IsScalarLoose(elem) ? elem : 0);
+                object stored = elem is BtlNode || IsScalarLoose(elem) ? elem : 0;
+                if (!TryFrontEdit(() => FrontEdit.Insert(vec, vec.V.Count, stored))) return;
                 if (elem is BtlTable && (string.IsNullOrEmpty(vec.Elem) || vec.Elem == "unknown"))
                     vec.Elem = "table";
                 else if (elem is BtlStruct && (string.IsNullOrEmpty(vec.Elem) || vec.Elem == "unknown"))
@@ -1041,13 +1042,28 @@ namespace BtldMapEditor.Front
                 if (input == null) return;
                 try
                 {
-                    st.V.Add(ParseScalar(memType, input));
+                    object parsedMember = ParseScalar(memType, input);
+                    if (!TryFrontEdit(() => FrontEdit.SetMember(st, st.V.Count, parsedMember))) return;
                     NotifyChanged(refreshTree: false);
                 }
                 catch (Exception ex)
                 {
                     MessageBox.Show("无法解析值：\n" + ex.Message, "注册表编辑", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
+            }
+        }
+
+        bool TryFrontEdit(Action edit)
+        {
+            try
+            {
+                edit();
+                return true;
+            }
+            catch (FrontEditException ex)
+            {
+                MessageBox.Show(ex.Message, "注册表编辑", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return false;
             }
         }
 
@@ -1644,29 +1660,32 @@ namespace BtldMapEditor.Front
                 return;
             }
 
-            if (vt.Scalar != null)
-            {
-                vt.Scalar.V = parsed;
-            }
-            else if (vt.Container is BtlVector vec && vt.Key >= 0 && vt.Key < vec.V.Count)
-            {
-                vec.V[vt.Key] = parsed;
-            }
-            else if (vt.Container is BtlStruct st && vt.Key >= 0 && vt.Key < st.V.Count)
-            {
-                st.V[vt.Key] = parsed;
-            }
-            else if (vt.Container is BtlTable tbl)
-            {
-                if (tbl.F.TryGetValue(vt.Key, out BtlNode n) && n is BtlScalar sc)
-                    sc.V = parsed;
-                else
-                    tbl.F[vt.Key] = BtlFrontJson.Scalar(vt.Type, parsed);
-            }
-            else
-            {
+            bool applied = false;
+            if (!TryFrontEdit(() =>
+                {
+                    if (vt.Scalar != null)
+                    {
+                        FrontEdit.SetHeldScalar(vt.Scalar, parsed);
+                        applied = true;
+                    }
+                    else if (vt.Container is BtlVector vec && vt.Key >= 0 && vt.Key < vec.V.Count)
+                    {
+                        FrontEdit.SetAt(vec, vt.Key, parsed);
+                        applied = true;
+                    }
+                    else if (vt.Container is BtlStruct st && vt.Key >= 0 && vt.Key < st.V.Count)
+                    {
+                        FrontEdit.SetMember(st, vt.Key, parsed);
+                        applied = true;
+                    }
+                    else if (vt.Container is BtlTable tbl)
+                    {
+                        FrontEdit.SetScalar(tbl, vt.Key, vt.Type, parsed);
+                        applied = true;
+                    }
+                }))
                 return;
-            }
+            if (!applied) return;
 
             row.SubItems[3].Text = FormatValue(parsed);
             if (vt.IsAbsent)
