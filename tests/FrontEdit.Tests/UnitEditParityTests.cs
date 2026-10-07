@@ -6,18 +6,6 @@ namespace BtlCore.Front.Tests;
 
 public class UnitEditParityTests
 {
-    static string UnitLua()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            string path = Path.Combine(dir.FullName, "EditorLayout", "scripts", "unit.lua");
-            if (File.Exists(path)) return File.ReadAllText(path);
-            dir = dir.Parent;
-        }
-        throw new FileNotFoundException("EditorLayout/scripts/unit.lua");
-    }
-
     static BtlFrontDocument Sample()
     {
         var doc = new BtlFrontDocument { Root = BtlFrontJson.NewTable() };
@@ -52,7 +40,11 @@ public class UnitEditParityTests
     {
         var host = new ScriptHost();
         host.Load(doc);
-        host.Execute(UnitLua(), "unit.lua");
+        EditorScripts.Load(host,
+            "unit/部队AI行为.lua",
+            "unit/将领配置.lua",
+            "unit/特种部队配置.lua",
+            "unit/基础部队信息.lua");
         return host;
     }
 

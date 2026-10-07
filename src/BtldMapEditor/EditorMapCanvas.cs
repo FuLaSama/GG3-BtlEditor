@@ -55,10 +55,14 @@ namespace BtldMapEditor
         private Bitmap _viewCache;
         private int _viewCacheRadius;
         private int _viewCacheSrcX, _viewCacheSrcY, _viewCacheSrcW, _viewCacheSrcH;
-        private Point _lastPaintScroll = new Point(int.MinValue, int.MinValue);
         private readonly Dictionary<int, int> _factionCamp = new Dictionary<int, int>();
         private int _playerFactionId = -1;
         private int _playerCamp = -1;
+        bool _spriteContentDirty = true;
+        bool _spriteViewport;
+        DecodedTerrainMap _spriteDecoded;
+        Rectangle _spriteRegion;
+        int _spriteRegionStep;
 
         public bool ShowCellCoordinates
         {
@@ -191,6 +195,25 @@ namespace BtldMapEditor
         {
             _cells = FrontNav.RebuildCells(_doc);
             RefreshFactionRoles();
+            NotifyContentChanged();
+        }
+
+        public void NotifyContentChanged()
+        {
+            _spriteContentDirty = true;
+            _spriteRegion = Rectangle.Empty;
+        }
+
+        public void LoadPreparedDocument(BtlFrontDocument doc, List<MapCell> cells)
+        {
+            _doc = doc;
+            _cells = cells;
+            _selectedCellIndex = _dropPreviewIndex = -1;
+            _spriteCellHash = null;
+            RefreshFactionRoles();
+            NotifyContentChanged();
+            UpdateScrollSize();
+            Invalidate();
         }
 
         /// <summary>脚本改完当前文档后，按这份文档重投影格子，保留选中格。</summary>
@@ -198,6 +221,7 @@ namespace BtldMapEditor
         {
             _doc = doc;
             RebuildCells();
+            UpdateScrollSize();
             Invalidate();
         }
 
@@ -230,6 +254,7 @@ namespace BtldMapEditor
 
             _cells = newCells;
             RefreshFactionRoles();
+            NotifyContentChanged();
             UpdateScrollSize();
             Invalidate();
         }
@@ -384,8 +409,6 @@ namespace BtldMapEditor
                 return;
             }
 
-            RefreshFactionRoles();
-
             // Sprite 模式关闭抗锯齿，避免六角边缘糊成游戏里没有的颜色。
             int cols = MapCols;
             int rows = MapRows;
@@ -449,6 +472,13 @@ namespace BtldMapEditor
                     return b;
                 }
 
+                Dictionary<int, BtlTable> reinforceByCell = null;
+                if (_renderMode == MapRenderMode.Reinforcements)
+                {
+                    reinforceByCell = new Dictionary<int, BtlTable>();
+                    foreach (var point in FrontNav.TableItems(FrontNav.ReinforcePoints(_doc)))
+                        reinforceByCell.TryAdd((int)FrontNav.ScalarI64(point, 0), point);
+                }
                 PointF[] points = new PointF[6];
 
                 // ----------------------------------------------------
@@ -759,15 +789,7 @@ namespace BtldMapEditor
                         // 7. 绘制增兵点 Badge
                         if (_renderMode == MapRenderMode.Reinforcements)
                         {
-                            BtlTable rpHit = null;
-                            foreach (var rp in FrontNav.TableItems(FrontNav.ReinforcePoints(_doc)))
-                            {
-                                if ((int)FrontNav.ScalarI64(rp, 0) == cell.Index)
-                                {
-                                    rpHit = rp;
-                                    break;
-                                }
-                            }
+                            reinforceByCell.TryGetValue(cell.Index, out var rpHit);
 
                             if (rpHit != null)
                             {
@@ -1096,14 +1118,26 @@ namespace BtldMapEditor
             bool showBldg = _renderMode == MapRenderMode.All || _renderMode == MapRenderMode.BuildingsOnly;
             bool showFort = _renderMode == MapRenderMode.All || _renderMode == MapRenderMode.FortificationsOnly;
             int meta = SpriteMetaKey(showBldg, showFort);
-            Point scroll = AutoScrollPosition;
-            bool scrolled = scroll != _lastPaintScroll;
-            _lastPaintScroll = scroll;
-            if (scrolled
-                && _spriteCellHash != null
-                && _spriteCellHash.Length == _cells.Count
-                && meta == _spriteMetaKey
-                && _spriteRenderer.MapBitmap != null)
+            bool viewport = (long)TerrainGeometry.CanvasWidth(FrontNav.MapWidth(_doc))
+                * TerrainGeometry.CanvasHeight(FrontNav.MapHeight(_doc)) > 4_000_000;
+            if (viewport)
+            {
+                if (_spriteContentDirty || meta != _spriteMetaKey || !_spriteViewport || _spriteDecoded == null)
+                {
+                    _spriteDecoded = FrontTerrain.FromCells(_doc, _cells);
+                    _spriteRegion = Rectangle.Empty;
+                    _spriteMetaKey = meta;
+                    _spriteCellHash = null;
+                    DropViewCache();
+                }
+                _spriteViewport = true;
+                _spriteContentDirty = false;
+                return true;
+            }
+            if (_spriteViewport) _spriteCellHash = null;
+            _spriteViewport = false;
+            _spriteDecoded = null;
+            if (!_spriteContentDirty && meta == _spriteMetaKey && _spriteRenderer.MapBitmap != null)
                 return true;
 
             bool sizeChanged = _spriteCellHash == null || _spriteCellHash.Length != _cells.Count || meta != _spriteMetaKey;
@@ -1118,7 +1152,10 @@ namespace BtldMapEditor
                         dirty.Add(i);
                 }
                 if (dirty.Count == 0 && _spriteRenderer.MapBitmap != null)
+                {
+                    _spriteContentDirty = false;
                     return true;
+                }
             }
 
             try
@@ -1141,6 +1178,7 @@ namespace BtldMapEditor
                 for (int i = 0; i < _cells.Count; i++)
                     _spriteCellHash[i] = HashSpriteCell(_cells[i], showBldg, showFort);
                 _spriteMetaKey = meta;
+                _spriteContentDirty = false;
                 DropViewCache();
                 return _spriteRenderer.MapBitmap != null;
             }
@@ -1153,6 +1191,11 @@ namespace BtldMapEditor
 
         void DrawSpriteViewport(Graphics g, float clipLeft, float clipTop, float clipRight, float clipBottom)
         {
+            if (_spriteViewport)
+            {
+                DrawSpriteRegion(g);
+                return;
+            }
             var bmp = _spriteRenderer?.MapBitmap;
             if (bmp == null) return;
 
@@ -1211,6 +1254,43 @@ namespace BtldMapEditor
                 GraphicsUnit.Pixel);
             g.InterpolationMode = oldInterp;
             g.CompositingMode = oldMode;
+        }
+
+        void DrawSpriteRegion(Graphics g)
+        {
+            float scale = _radius * 1.5f / TerrainGeometry.ColW;
+            float k = scale / TerrainGeometry.Scale;
+            float ox = _radius + 10 - TerrainGeometry.OriginX * scale - TerrainGeometry.Pad * k;
+            float oy = 10 - TerrainGeometry.OriginY * scale - TerrainGeometry.Pad * k;
+            int cw = TerrainGeometry.CanvasWidth(_spriteDecoded.Width);
+            int ch = TerrainGeometry.CanvasHeight(_spriteDecoded.Height);
+            // 视野使用整个客户区，局部重绘和选格可以直接复用同一缓存。
+            var scroll = AutoScrollPosition;
+            int left = Math.Clamp((int)Math.Floor((-scroll.X - ox) / k), 0, cw);
+            int top = Math.Clamp((int)Math.Floor((-scroll.Y - oy) / k), 0, ch);
+            int right = Math.Clamp((int)Math.Ceiling((ClientSize.Width - scroll.X - ox) / k), 0, cw);
+            int bottom = Math.Clamp((int)Math.Ceiling((ClientSize.Height - scroll.Y - oy) / k), 0, ch);
+            if (right <= left || bottom <= top) return;
+            var visible = Rectangle.FromLTRB(left, top, right, bottom);
+            int step = Math.Max(1, (int)Math.Floor(1 / k));
+            if (_spriteRegionStep != step || !_spriteRegion.Contains(visible))
+            {
+                int margin = (int)Math.Ceiling(96 / k);
+                int x = Math.Max(0, left - margin) / step * step;
+                int y = Math.Max(0, top - margin) / step * step;
+                var region = Rectangle.FromLTRB(x, y, Math.Min(cw, right + margin), Math.Min(ch, bottom + margin));
+                bool showBldg = _renderMode == MapRenderMode.All || _renderMode == MapRenderMode.BuildingsOnly;
+                bool showFort = _renderMode == MapRenderMode.All || _renderMode == MapRenderMode.FortificationsOnly;
+                _spriteRenderer.RenderRegion(_spriteDecoded, showBldg, showFort, region, step);
+                _spriteRegion = region;
+                _spriteRegionStep = step;
+            }
+            var bmp = _spriteRenderer.MapBitmap;
+            var oldInterpolation = g.InterpolationMode;
+            g.InterpolationMode = InterpolationMode.NearestNeighbor;
+            g.DrawImage(bmp, new RectangleF(ox + _spriteRegion.X * k, oy + _spriteRegion.Y * k,
+                bmp.Width * step * k, bmp.Height * step * k), new Rectangle(0, 0, bmp.Width, bmp.Height), GraphicsUnit.Pixel);
+            g.InterpolationMode = oldInterpolation;
         }
 
         bool ViewCacheCovers(int srcX, int srcY, int srcR, int srcB)

@@ -171,7 +171,8 @@ namespace BtlCore.Scripting
                 if (kind == JsonValueKind.Number)
                 {
                     if (jv.TryGetValue(out int i)) return DynValue.NewNumber(i);
-                    if (jv.TryGetValue(out long l)) return DynValue.NewNumber(l);
+                    if (jv.TryGetValue(out long l)) return ToDyn(l);
+                    if (jv.TryGetValue(out ulong u)) return ToDyn(u);
                     if (jv.TryGetValue(out double d)) return DynValue.NewNumber(d);
                 }
                 return DynValue.Nil;
@@ -179,42 +180,97 @@ namespace BtlCore.Scripting
             return JsonHandle(node);
         }
 
-        static JsonNode BoxJson(DynValue v)
+        JsonNode BoxJson(DynValue v) => BoxJson(v, new HashSet<Table>(), 0);
+
+        JsonNode BoxJson(DynValue v, HashSet<Table> parents, int depth)
         {
+            if (depth > 64) throw new FrontEditException("JSON 嵌套不能超过 64 层");
+            if (v == null || v.IsNil()) return null;
+            if (v.Type == DataType.Table && ReferenceEquals(v.Table, _jsonNull)) return null;
+            if (v.Type == DataType.UserData) return JsonOf(v).DeepClone();
             if (v.Type == DataType.Boolean) return JsonValue.Create(v.Boolean);
             if (v.Type == DataType.String) return JsonValue.Create(v.String);
             if (v.Type == DataType.Number)
             {
                 double n = v.Number;
-                if (double.IsNaN(n) || double.IsInfinity(n) || Math.Abs(n - Math.Truncate(n)) > 1e-9
-                    || n < int.MinValue || n > int.MaxValue)
-                    throw new FrontEditException("整数超出声明类型的范围");
-                return JsonValue.Create((int)n);
+                if (!double.IsFinite(n)) throw new FrontEditException("JSON 数字必须有限");
+                if (n == Math.Truncate(n))
+                {
+                    if (Math.Abs(n) > MaxExactInteger) throw new FrontEditException("JSON 整数超过 Lua 精确范围");
+                    if (n >= int.MinValue && n <= int.MaxValue) return JsonValue.Create((int)n);
+                    return JsonValue.Create((long)n);
+                }
+                return JsonValue.Create(n);
             }
             if (v.Type == DataType.Table)
             {
-                var arr = new JsonArray();
-                int count = v.Table.Length;
-                for (int i = 1; i <= count; i++)
-                {
-                    var item = v.Table.Get(i);
-                    if (item.Type != DataType.Number)
-                        throw new FrontEditException("整数超出声明类型的范围");
-                    double n = item.Number;
-                    if (Math.Abs(n - Math.Truncate(n)) > 1e-9 || n < int.MinValue || n > int.MaxValue)
-                        throw new FrontEditException("整数超出声明类型的范围");
-                    arr.Add((int)n);
-                }
-                return arr;
+                bool named = v.Table.Pairs.Any(p => p.Key.Type == DataType.String);
+                return named ? BoxObject(v, parents, depth) : BoxArray(v, parents, depth);
             }
             throw new FrontEditException("不能把这个值写入标量");
+        }
+
+        JsonObject BoxObject(DynValue value, HashSet<Table> parents, int depth)
+        {
+            var table = EnterJsonTable(value, parents, depth);
+            try
+            {
+                var obj = new JsonObject();
+                foreach (var pair in table.Pairs)
+                {
+                    if (pair.Key.Type != DataType.String) throw new FrontEditException("JSON 对象的键必须是字符串，不能混合数组下标");
+                    obj[pair.Key.String] = BoxJson(pair.Value, parents, depth + 1);
+                }
+                return obj;
+            }
+            finally { parents.Remove(table); }
+        }
+
+        JsonArray BoxArray(DynValue value, HashSet<Table> parents, int depth)
+        {
+            var table = EnterJsonTable(value, parents, depth);
+            try
+            {
+                int count = table.Length;
+                if (table.Pairs.Any(p => p.Key.Type != DataType.Number || p.Key.Number < 1
+                    || p.Key.Number > count || p.Key.Number != Math.Truncate(p.Key.Number)))
+                    throw new FrontEditException("JSON 数组必须使用连续的 1 起下标");
+                var array = new JsonArray();
+                for (int i = 1; i <= count; i++)
+                {
+                    var item = table.Get(i);
+                    if (item.IsNil()) throw new FrontEditException("JSON 数组不能有空洞；空元素请用 editor.json.null");
+                    array.Add(BoxJson(item, parents, depth + 1));
+                }
+                return array;
+            }
+            finally { parents.Remove(table); }
+        }
+
+        static Table EnterJsonTable(DynValue value, HashSet<Table> parents, int depth)
+        {
+            if (value.Type != DataType.Table) throw new FrontEditException("需要 Lua 表");
+            if (depth > 64 || !parents.Add(value.Table)) throw new FrontEditException("JSON 嵌套过深或包含循环引用");
+            return value.Table;
         }
 
         bool TryCountryVec(string path, bool create, out BtlVector vec)
         {
             vec = null;
+            if (NsPath.IsNs(path))
+            {
+                var leafNode = NsPath.NodeAt(Document, path);
+                vec = leafNode as BtlVector;
+                if (vec == null && create)
+                {
+                    NsPath.Ensure(Document, path, "u8", null);
+                    vec = NsPath.NodeAt(Document, path) as BtlVector;
+                }
+                if (vec == null) return false;
+                return AcceptCountryVec(vec, create);
+            }
             if (!FrontPath.TryGetVector(Document, path, create, out vec)) return false;
-            return AcceptCountryVec(vec);
+            return AcceptCountryVec(vec, create);
         }
 
         BtlVector CountryVec(string path, bool create)
@@ -224,13 +280,17 @@ namespace BtlCore.Scripting
             return vec;
         }
 
-        bool AcceptCountryVec(BtlVector vec)
+        bool AcceptCountryVec(BtlVector vec, bool write)
         {
             bool field10 = Document.Root.F.TryGetValue(10, out var node) && ReferenceEquals(node, vec);
             if (field10)
             {
-                if (string.IsNullOrEmpty(vec.Elem)) vec.Elem = "u8";
-                vec.Enc = PackedJsonStream.EncName;
+                if (write)
+                {
+                    RequireWrite();
+                    if (string.IsNullOrEmpty(vec.Elem)) vec.Elem = "u8";
+                    vec.Enc = PackedJsonStream.EncName;
+                }
                 return true;
             }
             return PackedJsonStream.EncIsPackedJson(vec.Enc);

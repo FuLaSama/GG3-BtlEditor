@@ -75,9 +75,21 @@ namespace BtldMapEditor
         PixelBuffer _buf;
         byte[] _occ;
         Bitmap _bitmap;
+        int _originX, _originY, _sampleStep = 1;
+        IReadOnlyList<TerrainCell> _sceneCells;
 
         // 装饰/建筑会画出格子外，脏区四周要留足余量。
-        const int SpriteInfluence = 280;
+        int _spriteInfluencePixels = 560;
+
+        void IncludeAtlasBounds(TerrainAtlas atlas, bool offsets = false)
+        {
+            foreach (var slice in atlas.Slices.Values)
+            {
+                int extent = Math.Max(Math.Max(Math.Abs(slice.RefX), Math.Abs(slice.W - slice.RefX)),
+                    Math.Max(Math.Abs(slice.RefY), Math.Abs(slice.H - slice.RefY)));
+                _spriteInfluencePixels = Math.Max(_spriteInfluencePixels, extent + (offsets ? 256 : 0));
+            }
+        }
 
         public string AtlasDir { get; }
         public string LastError { get; private set; }
@@ -107,6 +119,9 @@ namespace BtldMapEditor
             _coast.LoadXml(Path.Combine(atlasDir, "coast.xml"));
             _coastmask = new TerrainAtlas(atlasDir);
             _coastmask.LoadXml(Path.Combine(atlasDir, "coastmask.xml"));
+            IncludeAtlasBounds(_doodads, offsets: true);
+            IncludeAtlasBounds(_masks);
+            IncludeAtlasBounds(_coast);
 
             LoadBaseTiles(atlasDir);
             BuildHexMask();
@@ -156,6 +171,8 @@ namespace BtldMapEditor
         /// <summary>清空缓冲后画整张图。</summary>
         public void RenderFull(DecodedTerrainMap decoded, bool showBuildings, bool showForts)
         {
+            _originX = _originY = 0;
+            _sampleStep = 1;
             int cw = TerrainGeometry.CanvasWidth(decoded.Width);
             int ch = TerrainGeometry.CanvasHeight(decoded.Height);
             EnsureBuffer(cw, ch);
@@ -166,12 +183,31 @@ namespace BtldMapEditor
             _buf.CopyToBitmap(_bitmap, 0, 0, cw, ch);
         }
 
+        /// <summary>只分配视野的缓冲。坐标仍使用全图坐标，缩小时只计算实际显示的采样点。</summary>
+        public Bitmap RenderRegion(DecodedTerrainMap decoded, bool showBuildings, bool showForts, Rectangle region, int sampleStep = 1)
+        {
+            region.Intersect(new Rectangle(0, 0, TerrainGeometry.CanvasWidth(decoded.Width), TerrainGeometry.CanvasHeight(decoded.Height)));
+            if (region.Width <= 0 || region.Height <= 0) throw new ArgumentOutOfRangeException(nameof(region));
+            _originX = region.Left; _originY = region.Top;
+            _sampleStep = Math.Max(1, sampleStep);
+            int cw = (region.Width + _sampleStep - 1) / _sampleStep;
+            int ch = (region.Height + _sampleStep - 1) / _sampleStep;
+            EnsureBuffer(cw, ch);
+            Array.Clear(_buf.Argb);
+            Array.Clear(_occ);
+            DrawScene(decoded, showBuildings, showForts, new PixelClip(region.Left, region.Top, region.Right, region.Bottom), includeAll: false);
+            _buf.CopyToBitmap(_bitmap, 0, 0, cw, ch);
+            return _bitmap;
+        }
+
+        int FirstSample(int value, int origin) => value + ((origin - value) % _sampleStep + _sampleStep) % _sampleStep;
+
         /// <summary>只重画 dirtyCells 的邻域，拷回位图对应矩形。</summary>
         public void RenderDirty(DecodedTerrainMap decoded, bool showBuildings, bool showForts, IReadOnlyList<int> dirtyCells)
         {
             int cw = TerrainGeometry.CanvasWidth(decoded.Width);
             int ch = TerrainGeometry.CanvasHeight(decoded.Height);
-            if (_buf == null || _buf.Width != cw || _buf.Height != ch || _bitmap == null)
+            if (_originX != 0 || _originY != 0 || _sampleStep != 1 || _buf == null || _buf.Width != cw || _buf.Height != ch || _bitmap == null)
             {
                 RenderFull(decoded, showBuildings, showForts);
                 return;
@@ -194,7 +230,8 @@ namespace BtldMapEditor
             foreach (int n in extra)
                 dirty.Add(n);
 
-            int pad = SpriteInfluence * TerrainGeometry.Scale;
+            EnsureEntityAtlases(showBuildings, showForts);
+            int pad = _spriteInfluencePixels;
             int x0 = int.MaxValue, y0 = int.MaxValue, x1 = 0, y1 = 0;
             foreach (int i in dirty)
             {
@@ -251,14 +288,31 @@ namespace BtldMapEditor
 
         void DrawScene(DecodedTerrainMap decoded, bool showBuildings, bool showForts, PixelClip clip, bool includeAll)
         {
-            int influence = SpriteInfluence * TerrainGeometry.Scale;
-            var coastal = new bool[decoded.Cells.Count];
-            for (int i = 0; i < decoded.Cells.Count; i++)
+            EnsureEntityAtlases(showBuildings, showForts);
+            int influence = _spriteInfluencePixels;
+            _sceneCells = decoded.Cells;
+            if (!includeAll)
             {
-                if (!includeAll && !Intersects(decoded.Cells[i], clip, influence))
-                    continue;
-                coastal[i] = decoded.Cells[i].IsCoast(decoded.Cells, decoded.Width, decoded.Height);
+                int colStep = TerrainGeometry.ColW * TerrainGeometry.Scale;
+                int rowStep = TerrainGeometry.RowH * TerrainGeometry.Scale;
+                int xOrigin = TerrainGeometry.Pad + TerrainGeometry.OriginX * TerrainGeometry.Scale;
+                int yOrigin = TerrainGeometry.Pad + TerrainGeometry.OriginY * TerrainGeometry.Scale;
+                int col0 = Math.Max(0, (int)Math.Floor((clip.X0 - influence - xOrigin) / (double)colStep));
+                int col1 = Math.Min(decoded.Width - 1, (clip.X1 + influence - xOrigin) / colStep);
+                int row0 = Math.Max(0, (int)Math.Floor((clip.Y0 - influence - yOrigin - TerrainGeometry.OddRowShift * TerrainGeometry.Scale) / (double)rowStep));
+                int row1 = Math.Min(decoded.Height - 1, (clip.Y1 + influence - yOrigin) / rowStep);
+                var visible = new List<TerrainCell>();
+                for (int row = row0; row <= row1; row++)
+                    for (int col = col0; col <= col1; col++)
+                    {
+                        var cell = decoded.Cells[row * decoded.Width + col];
+                        if (Intersects(cell, clip, influence)) visible.Add(cell);
+                    }
+                _sceneCells = visible;
             }
+            var coastal = new HashSet<int>();
+            foreach (var cell in _sceneCells)
+                if (cell.IsCoast(decoded.Cells, decoded.Width, decoded.Height)) coastal.Add(cell.Index);
 
             DrawBase(_buf, _occ, decoded, coastal, clip, includeAll, influence);
             DrawCoast(_buf, decoded, coastal, clip, includeAll, influence);
@@ -273,7 +327,8 @@ namespace BtldMapEditor
             {
                 int c = a.Cy.CompareTo(b.Cy);
                 if (c != 0) return c;
-                return a.Layer.CompareTo(b.Layer);
+                c = a.Layer.CompareTo(b.Layer);
+                return c != 0 ? c : a.CellIndex.CompareTo(b.CellIndex);
             });
             foreach (var job in overlays)
                 Paste(_buf, job.Sprite, job.X, job.Y, clip);
@@ -390,13 +445,13 @@ namespace BtldMapEditor
             }
         }
 
-        void DrawBase(PixelBuffer buf, byte[] occ, DecodedTerrainMap decoded, bool[] coastal, PixelClip clip, bool includeAll, int influence)
+        void DrawBase(PixelBuffer buf, byte[] occ, DecodedTerrainMap decoded, HashSet<int> coastal, PixelClip clip, bool includeAll, int influence)
         {
-            var cells = decoded.Cells;
+            var cells = _sceneCells;
             for (int i = 0; i < cells.Count; i++)
             {
                 if (!includeAll && !Intersects(cells[i], clip, influence)) continue;
-                if (cells[i].Sea && !coastal[i]) continue;
+                if (cells[i].Sea && !coastal.Contains(cells[i].Index)) continue;
                 var tex = _mapPt[Math.Min(cells[i].T, _mapPt.Length - 1)];
                 ToCanvas(cells[i], out int cx, out int cy);
                 FillHex(buf, occ, tex, cx, cy, clip);
@@ -405,9 +460,9 @@ namespace BtldMapEditor
             for (int i = 0; i < cells.Count; i++)
             {
                 if (!includeAll && !Intersects(cells[i], clip, influence)) continue;
-                if (cells[i].Sea && !coastal[i]) continue;
+                if (cells[i].Sea && !coastal.Contains(cells[i].Index)) continue;
                 if (cells[i].T == decoded.PlayableFlag) continue;
-                if (!cells[i].ClimateDiffers(cells, decoded.Width, decoded.Height)) continue;
+                if (!cells[i].ClimateDiffers(decoded.Cells, decoded.Width, decoded.Height)) continue;
                 var tex = _mapPt[Math.Min(cells[i].T, _mapPt.Length - 1)];
                 StampMask(buf, cells[i], tex, clip);
             }
@@ -415,7 +470,7 @@ namespace BtldMapEditor
             for (int i = 0; i < cells.Count; i++)
             {
                 if (!includeAll && !Intersects(cells[i], clip, influence)) continue;
-                if (!(cells[i].Sea && !coastal[i])) continue;
+                if (!(cells[i].Sea && !coastal.Contains(cells[i].Index))) continue;
                 ToCanvas(cells[i], out int cx, out int cy);
                 FillHex(buf, occ, _mapSea, cx, cy, clip);
             }
@@ -436,23 +491,23 @@ namespace BtldMapEditor
             int tw = tex.Width, th = tex.Height;
             var texPx = tex.Argb;
             var dst = buf.Argb;
-            for (int iy = iy0; iy < iy1; iy++)
+            for (int iy = FirstSample(y0 + iy0, _originY) - y0; iy < iy1; iy += _sampleStep)
             {
                 int dy = y0 + iy;
-                int row = dy * cw;
+                int row = (dy - _originY) / _sampleStep * cw;
                 int mrow = iy * _hexMaskW;
                 int sy = dy - pad;
                 sy %= th;
                 if (sy < 0) sy += th;
                 int texRow = sy * tw;
-                for (int ix = ix0; ix < ix1; ix++)
+                for (int ix = FirstSample(x0 + ix0, _originX) - x0; ix < ix1; ix += _sampleStep)
                 {
                     if (_hexMask[mrow + ix] == 0) continue;
                     int dx = x0 + ix;
                     int sx = dx - pad;
                     sx %= tw;
                     if (sx < 0) sx += tw;
-                    int dest = row + dx;
+                    int dest = row + (dx - _originX) / _sampleStep;
                     dst[dest] = texPx[texRow + sx] | unchecked((int)0xFF000000);
                     occ[dest] = 255;
                 }
@@ -481,16 +536,16 @@ namespace BtldMapEditor
             if (iy0 >= iy1 || ix0 >= ix1) return;
 
             int tw = tex.Width, th = tex.Height;
-            for (int iy = iy0; iy < iy1; iy++)
+            for (int iy = FirstSample(y + iy0, _originY) - y; iy < iy1; iy += _sampleStep)
             {
                 int dy = y + iy;
-                int row = dy * cw;
+                int row = (dy - _originY) / _sampleStep * cw;
                 int mrow = iy * mask.Width;
                 int sy = dy - pad;
                 sy %= th;
                 if (sy < 0) sy += th;
                 int texRow = sy * tw;
-                for (int ix = ix0; ix < ix1; ix++)
+                for (int ix = FirstSample(x + ix0, _originX) - x; ix < ix1; ix += _sampleStep)
                 {
                     int a = (mask.Argb[mrow + ix] >> 16) & 255;
                     if (a == 0) continue;
@@ -499,7 +554,7 @@ namespace BtldMapEditor
                     sx %= tw;
                     if (sx < 0) sx += tw;
                     int src = tex.Argb[texRow + sx];
-                    int destI = row + dx;
+                    int destI = row + (dx - _originX) / _sampleStep;
                     int dst = buf.Argb[destI];
                     if (a == 255)
                     {
@@ -515,15 +570,16 @@ namespace BtldMapEditor
             }
         }
 
-        void DrawCoast(PixelBuffer buf, DecodedTerrainMap decoded, bool[] coastal, PixelClip clip, bool includeAll, int influence)
+        void DrawCoast(PixelBuffer buf, DecodedTerrainMap decoded, HashSet<int> coastal, PixelClip clip, bool includeAll, int influence)
         {
             int cw = buf.Width;
             int pad = TerrainGeometry.Pad;
-            for (int i = 0; i < decoded.Cells.Count; i++)
+            var cells = _sceneCells;
+            for (int i = 0; i < cells.Count; i++)
             {
-                if (!coastal[i]) continue;
-                if (!includeAll && !Intersects(decoded.Cells[i], clip, influence)) continue;
-                var cell = decoded.Cells[i];
+                if (!coastal.Contains(cells[i].Index)) continue;
+                if (!includeAll && !Intersects(cells[i], clip, influence)) continue;
+                var cell = cells[i];
                 int bits = cell.CoastMask(decoded.Cells, decoded.Width, decoded.Height);
                 if (bits >= 63) continue;
                 int n = bits + 1;
@@ -551,17 +607,17 @@ namespace BtldMapEditor
                 if (iy0 >= iy1 || ix0 >= ix1) continue;
 
                 int seaW = _mapSea.Width, seaH = _mapSea.Height;
-                for (int iy = iy0; iy < iy1; iy++)
+                for (int iy = FirstSample(y + iy0, _originY) - y; iy < iy1; iy += _sampleStep)
                 {
                     int dy = y + iy;
-                    int row = dy * cw;
+                    int row = (dy - _originY) / _sampleStep * cw;
                     int crow = iy * w;
                     int hx = dy - (cy + _hexMaskOy);
                     int sy = dy - pad;
                     sy %= seaH;
                     if (sy < 0) sy += seaH;
                     int seaRow = sy * seaW;
-                    for (int ix = ix0; ix < ix1; ix++)
+                    for (int ix = FirstSample(x + ix0, _originX) - x; ix < ix1; ix += _sampleStep)
                     {
                         int dx = x + ix;
                         int mx = dx - (cx + _hexMaskOx);
@@ -585,7 +641,7 @@ namespace BtldMapEditor
                         int gg = Clamp((((sea >> 8) & 255) * mg + ((coast >> 8) & 255) * 255) / 255);
                         int bb = Clamp(((sea & 255) * mg + (coast & 255) * 255) / 255);
 
-                        int destI = row + dx;
+                        int destI = row + (dx - _originX) / _sampleStep;
                         int dst = buf.Argb[destI];
                         int ia = 255 - a;
                         int dr = ((dst >> 16) & 255) * ia + rr * a;
@@ -600,7 +656,7 @@ namespace BtldMapEditor
         void DrawDoodads(PixelBuffer buf, DecodedTerrainMap decoded, PixelClip clip, bool includeAll, int influence)
         {
             var jobs = new List<OverlayJob>();
-            foreach (var cell in decoded.Cells)
+            foreach (var cell in _sceneCells)
             {
                 if (!includeAll && !Intersects(cell, clip, influence)) continue;
                 TryAddSpriteJob(jobs, cell, cell.A2, 0);
@@ -613,7 +669,8 @@ namespace BtldMapEditor
                 if (c != 0) return c;
                 c = a.Layer.CompareTo(b.Layer);
                 if (c != 0) return c;
-                return a.Order.CompareTo(b.Order);
+                c = a.Order.CompareTo(b.Order);
+                return c != 0 ? c : a.CellIndex.CompareTo(b.CellIndex);
             });
             foreach (var job in jobs)
                 Paste(buf, job.Sprite, job.X, job.Y, clip);
@@ -629,7 +686,7 @@ namespace BtldMapEditor
             ToCanvas(cell, out int cx, out int cy);
             int x = cx - sl.RefX + slot.Value.Dx * TerrainGeometry.Scale;
             int y = cy - sl.RefY + slot.Value.Dy * TerrainGeometry.Scale;
-            jobs.Add(new OverlayJob { Cy = cy, Layer = tdef.Layer, Order = order, X = x, Y = y, Sprite = crop });
+            jobs.Add(new OverlayJob { CellIndex = cell.Index, Cy = cy, Layer = tdef.Layer, Order = order, X = x, Y = y, Sprite = crop });
         }
 
         void EnsureEntityAtlases(bool wantBuildings, bool wantForts)
@@ -641,6 +698,7 @@ namespace BtldMapEditor
                 var atlas = new TerrainAtlas(_entityDir);
                 atlas.LoadXml(Path.Combine(_entityDir, "buildings.xml"));
                 _buildingsAtlas = atlas;
+                IncludeAtlasBounds(atlas, offsets: true);
             }
             if (wantForts)
             {
@@ -649,6 +707,7 @@ namespace BtldMapEditor
                     var atlas = new TerrainAtlas(_entityDir);
                     atlas.LoadXml(Path.Combine(_entityDir, "battleres.xml"));
                     _fortsAtlas = atlas;
+                    IncludeAtlasBounds(atlas);
                 }
                 if (_gunsAtlas == null)
                 {
@@ -658,6 +717,7 @@ namespace BtldMapEditor
                         var atlas = new TerrainAtlas(_entityDir);
                         atlas.LoadXml(gunXml);
                         _gunsAtlas = atlas;
+                        IncludeAtlasBounds(atlas, offsets: true);
                     }
                 }
             }
@@ -676,7 +736,7 @@ namespace BtldMapEditor
                 ToCanvas(cell, out int cx, out int cy);
                 int x = cx - sl.RefX + item.Dx * TerrainGeometry.Scale;
                 int y = cy - sl.RefY + item.Dy * TerrainGeometry.Scale;
-                jobs.Add(new OverlayJob { Cy = cy, Layer = 11, X = x, Y = y, Sprite = crop });
+                jobs.Add(new OverlayJob { CellIndex = cell.Index, Cy = cy, Layer = 11, X = x, Y = y, Sprite = crop });
             }
         }
 
@@ -725,7 +785,7 @@ namespace BtldMapEditor
                 }
                 if (FortYLift.TryGetValue(fid, out int lift))
                     y -= lift * TerrainGeometry.Scale;
-                jobs.Add(new OverlayJob { Cy = cy, Layer = 10, X = x, Y = y, Sprite = crop });
+                jobs.Add(new OverlayJob { CellIndex = cell.Index, Cy = cy, Layer = 10, X = x, Y = y, Sprite = crop });
             }
         }
 
@@ -767,7 +827,7 @@ namespace BtldMapEditor
             return false;
         }
 
-        static void Paste(PixelBuffer dst, PixelBuffer src, int x, int y, PixelClip clip)
+        void Paste(PixelBuffer dst, PixelBuffer src, int x, int y, PixelClip clip)
         {
             int x0 = Math.Max(clip.X0, x);
             int y0 = Math.Max(clip.Y0, y);
@@ -779,16 +839,16 @@ namespace BtldMapEditor
             var srcPx = src.Argb;
             var dstPx = dst.Argb;
             int sw = src.Width;
-            for (int dy = y0; dy < y1; dy++)
+            for (int dy = FirstSample(y0, _originY); dy < y1; dy += _sampleStep)
             {
-                int drow = dy * dw;
+                int drow = (dy - _originY) / _sampleStep * dw;
                 int srow = (dy - y) * sw;
-                for (int dx = x0; dx < x1; dx++)
+                for (int dx = FirstSample(x0, _originX); dx < x1; dx += _sampleStep)
                 {
                     int sp = srcPx[srow + (dx - x)];
                     int a = (sp >> 24) & 255;
                     if (a == 0) continue;
-                    int destI = drow + dx;
+                    int destI = drow + (dx - _originX) / _sampleStep;
                     if (a == 255)
                     {
                         dstPx[destI] = sp;
@@ -835,16 +895,16 @@ namespace BtldMapEditor
             return dst;
         }
 
-        static void FillUnoccupied(PixelBuffer buf, byte[] occ, int color, PixelClip clip)
+        void FillUnoccupied(PixelBuffer buf, byte[] occ, int color, PixelClip clip)
         {
             int cw = buf.Width;
             var px = buf.Argb;
-            for (int y = clip.Y0; y < clip.Y1; y++)
+            for (int y = clip.Y0; y < clip.Y1; y += _sampleStep)
             {
-                int row = y * cw;
-                for (int x = clip.X0; x < clip.X1; x++)
+                int row = (y - _originY) / _sampleStep * cw;
+                for (int x = clip.X0; x < clip.X1; x += _sampleStep)
                 {
-                    int i = row + x;
+                    int i = row + (x - _originX) / _sampleStep;
                     if (occ[i] == 0)
                         px[i] = color;
                 }
@@ -862,7 +922,7 @@ namespace BtldMapEditor
 
         struct OverlayJob
         {
-            public int Cy, Layer, Order, X, Y;
+            public int CellIndex, Cy, Layer, Order, X, Y;
             public PixelBuffer Sprite;
         }
 

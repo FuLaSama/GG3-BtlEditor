@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<page id="unit">
+  <section kind="form" bind="/6/0" resolve="unit">
+    <group title="基础部队信息">
+      <row label="兵种类型 ID:">
+        <field id="unit" widget="number" type="u16" bind="/0.3" lookup="unit"/>
+      </row>
+      <row label="归属势力 / 部队 ID:">
+        <field id="faction" widget="number" type="u16" bind="/0.1"/>
+        <field id="agent" widget="number" type="u16" bind="/0.2"/>
+      </row>
+      <row label="当前/最大生命值:">
+        <field id="hp" widget="number" type="u16" bind="/0.6"/>
+        <field id="max_hp" widget="number" type="u16" bind="/0.7"/>
+      </row>
+      <row label="堆叠编制 / 经验等级:">
+        <field id="stack" widget="number" type="u8" bind="/0.4" shift="8" width="8"/>
+        <field id="level" widget="number" type="u8" bind="/0.4" shift="0" width="8"/>
+      </row>
+      <row label="关键目标 / 初始士气:">
+        <field id="play_mode" widget="number" type="u8" bind="/2"/>
+        <field id="ai_target" widget="number" type="u8" bind="/5"/>
+      </row>
+      <row label="修饰势力 / 部队移动力:">
+        <field id="faction_extra" widget="number" type="u8" bind="/6"/>
+        <field id="mobility" widget="number" type="u8" bind="/0.5" shift="8" width="8"/>
+      </row>
+      <row label="部队朝向 / 参数 8:">
+        <field id="direction" widget="number" type="u8" bind="/0.5" shift="0" width="8"/>
+        <field id="val8" widget="number" type="u16" bind="/0.8"/>
+      </row>
+      <row label="参数 9:">
+        <field id="val9" widget="number" type="u16" bind="/0.9"/>
+      </row>
+    </group>
+    <group title="部队AI行为">
+      <row>
+        <field id="behavior" label="启用部队行为" widget="check" bind="/3"/>
+      </row>
+      <row label="参数 0:">
+        <field id="behavior_0" widget="number" type="u8" bind="/3/0" when="behavior"/>
+      </row>
+      <row label="参数 1:">
+        <field id="behavior_id" widget="number" type="u16" bind="/3/1" when="behavior"/>
+      </row>
+      <row label="参数 2:">
+        <field id="behavior_2" widget="number" type="i16" bind="/3/2" when="behavior"/>
+      </row>
+      <row label="参数 3:">
+        <field id="behavior_radius" widget="number" type="u8" bind="/3/3" when="behavior"/>
+      </row>
+      <row label="参数 4:">
+        <field id="behavior_4" widget="number" type="u8" bind="/3/4" when="behavior"/>
+      </row>
+      <row label="参数 5:">
+        <field id="behavior_center" widget="number" type="u16" bind="/3/5" when="behavior"/>
+      </row>
+      <row label="参数 6:">
+        <field id="behavior_6" widget="number" type="i16" bind="/3/6" when="behavior"/>
+      </row>
+    </group>
+    <group title="将领配置">
+      <row>
+        <field id="general" label="启用将领配置" widget="check" bind="/11"/>
+      </row>
+      <row label="附加将领 ID:">
+        <field id="general_id" widget="number" type="u16" bind="/11/0" lookup="general" when="general"/>
+      </row>
+      <row>
+        <field id="general_active" label="启用附加参数" widget="check" bind="/11/1" when="general"/>
+      </row>
+      <row label="附加参数:">
+        <field id="general_param2" widget="number" type="u8" bind="/11/2" when="general,general_active"/>
+      </row>
+    </group>
+    <group title="特种部队配置">
+      <row>
+        <field id="ex" label="启用特种部队配置" widget="check" bind="/10"/>
+      </row>
+      <row label="特种部队 ID:">
+        <field id="ex_id" widget="number" type="u16" bind="/10/0" lookup="ex" when="ex"/>
+      </row>
+      <row label="当前/最大血量:">
+        <field id="ex_hp" widget="number" type="u16" bind="/10/2" when="ex"/>
+        <field id="ex_max_hp" widget="number" type="u16" bind="/10/3" when="ex"/>
+      </row>
+      <row label="参数 1 / 4:">
+        <field id="ex_1" widget="number" type="u8" bind="/10/1" when="ex"/>
+        <field id="ex_4" widget="number" type="u16" bind="/10/4" when="ex"/>
+      </row>
+      <row label="参数 5:">
+        <field id="ex_5" widget="number" type="u16" bind="/10/5" when="ex"/>
+      </row>
+    </group>
+    <actions>
+      <action id="add" label="添加部队" script="place_unit"/>
+      <action id="update" label="保存选中修改" script="apply_unit"/>
+      <action id="delete" label="删除选中部队" script="delete_unit" confirm="确定要删除选中的部队吗？"/>
+    </actions>
+  </section>
+  <section title="地图外部队 / 增援部队" kind="list" bind="/6/0" filter="offmap">
+    <columns>
+      <column header="格子索引" bind="/0.0" />
+      <column header="部队 ID" bind="/0.2" />
+      <column header="兵种" bind="/0.3" />
+      <column header="势力" bind="/0.1" />
+    </columns>
+    <fields>
+      <field id="unit" widget="number" type="u16" bind="/0.3" lookup="unit" label="兵种类型 ID" />
+      <field id="faction" widget="number" type="u16" bind="/0.1" label="所属势力" />
+      <field id="agent" widget="number" type="u16" bind="/0.2" label="部队 ID" />
+      <field id="hp" widget="number" type="u16" bind="/0.6" label="当前生命值" />
+      <field id="max_hp" widget="number" type="u16" bind="/0.7" label="最大生命值" />
+      <field id="stack" widget="number" type="u8" bind="/0.4" shift="8" width="8" label="堆叠编制" />
+      <field id="level" widget="number" type="u8" bind="/0.4" shift="0" width="8" label="经验等级" />
+      <field id="play_mode" widget="number" type="u8" bind="/2" label="关键目标" />
+      <field id="ai_target" widget="number" type="u8" bind="/5" label="初始士气" />
+      <field id="faction_extra" widget="number" type="u8" bind="/6" label="修饰势力" />
+      <field id="mobility" widget="number" type="u8" bind="/0.5" shift="8" width="8" label="移动力" />
+      <field id="direction" widget="number" type="u8" bind="/0.5" shift="0" width="8" label="朝向" />
+      <field id="val8" widget="number" type="u16" bind="/0.8" label="参数 8" />
+      <field id="val9" widget="number" type="u16" bind="/0.9" label="参数 9" />
+      <field id="behavior" label="启用部队行为" widget="check" bind="/3" />
+      <field id="behavior_0" widget="number" type="u8" bind="/3/0" when="behavior" label="行为参数 0" />
+      <field id="behavior_id" widget="number" type="u16" bind="/3/1" when="behavior" label="行为 ID" />
+      <field id="behavior_2" widget="number" type="i16" bind="/3/2" when="behavior" label="行为参数 2" />
+      <field id="behavior_radius" widget="number" type="u8" bind="/3/3" when="behavior" label="行为半径" />
+      <field id="behavior_4" widget="number" type="u8" bind="/3/4" when="behavior" label="行为参数 4" />
+      <field id="behavior_center" widget="number" type="u16" bind="/3/5" when="behavior" label="行为中心" />
+      <field id="behavior_6" widget="number" type="i16" bind="/3/6" when="behavior" label="行为参数 6" />
+      <field id="general" label="启用将领配置" widget="check" bind="/11" />
+      <field id="general_id" widget="number" type="u16" bind="/11/0" lookup="general" when="general" label="将领 ID" />
+      <field id="general_active" label="启用附加参数" widget="check" bind="/11/1" when="general" />
+      <field id="general_param2" widget="number" type="u8" bind="/11/2" when="general,general_active" label="将领附加参数" />
+      <field id="ex" label="启用特种部队配置" widget="check" bind="/10" />
+      <field id="ex_id" widget="number" type="u16" bind="/10/0" lookup="ex" when="ex" label="特种部队 ID" />
+      <field id="ex_hp" widget="number" type="u16" bind="/10/2" when="ex" label="特种当前血量" />
+      <field id="ex_max_hp" widget="number" type="u16" bind="/10/3" when="ex" label="特种最大血量" />
+      <field id="ex_1" widget="number" type="u8" bind="/10/1" when="ex" label="特种参数 1" />
+      <field id="ex_4" widget="number" type="u16" bind="/10/4" when="ex" label="特种参数 4" />
+      <field id="ex_5" widget="number" type="u16" bind="/10/5" when="ex" label="特种参数 5" />
+    </fields>
+    <actions>
+      <action id="update" label="保存选中部队" script="apply_unit" />
+      <action id="delete" label="删除选中部队" script="delete_unit" confirm="确定删除选中的地图外部队？" />
+    </actions>
+  </section>
+</page>

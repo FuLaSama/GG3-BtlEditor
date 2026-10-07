@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<page id="country">
+  <section title="国家行为树" kind="tree" bind="/10">
+    <columns>
+      <column header="BT ID" bind="btid"/><column header="名称" bind="name"/>
+      <column header="Agent" bind="agent"/><column header="Class" bind="class"/><column header="ID" bind="id"/>
+    </columns>
+    <group title="行为树属性">
+      <row label="BT ID / ID"><field id="btid" type="i32" bind="btid"/><field id="id" type="i32" bind="id"/></row>
+      <row label="名称"><field id="name" widget="text" bind="name"/></row>
+      <row label="Agent / Class"><field id="agent" widget="text" bind="agent"/><field id="class" widget="text" bind="class"/></row>
+    </group>
+    <group title="节点属性">
+      <row label="节点 ID / Class"><field id="node_id" type="i32" bind="id" scope="node"/><field id="node_class" widget="text" bind="class" scope="node"/></row>
+      <row label="Method"><field id="method" widget="text" bind="method" scope="node"/></row>
+      <row label="Params"><field id="params" widget="integers" bind="params" scope="node"/></row>
+      <row label="Rounds"><field id="rounds" widget="integers" bind="rounds" scope="node"/></row>
+      <row label="Result / Count"><field id="result" type="i32" bind="result" scope="node"/><field id="count" type="i32" bind="count" scope="node"/></row>
+    </group>
+    <actions>
+      <action id="add" label="添加行为树" script="add_tree"/>
+      <action id="delete" label="删除行为树" script="delete_tree" confirm="确定删除选中的行为树？"/>
+      <action id="add_root" label="添加根节点" script="add_root"/>
+      <action id="add_child" label="添加子节点" script="add_child"/>
+      <action id="delete_node" label="删除节点" script="delete_child" confirm="确定删除选中的节点及其子节点？"/>
+      <action id="update" label="保存树和节点属性" script="save_bt"/>
+    </actions>
+  </section>
+</page>

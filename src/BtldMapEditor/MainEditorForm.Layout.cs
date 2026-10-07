@@ -5,160 +5,198 @@ namespace BtldMapEditor
 {
     public partial class MainEditorForm
     {
-        TableLayoutPanel _stageSlot;
-        LayoutPageControl _stageLayout;
+        readonly Dictionary<string, LayoutPageControl> _editorPages = new(StringComparer.Ordinal);
         ScriptHost _stageHost;
-        string _missingEditAction;
+        LayoutBundle _layoutBundle;
+        readonly HashSet<string> _staleEditorPages = new(StringComparer.Ordinal);
+        string ActivePageId => tabControlRight.SelectedTab?.Name;
+        LayoutPageControl TerrainPage => _editorPages.GetValueOrDefault("terrain");
+        static readonly HashSet<string> NativeHandlers = new(StringComparer.Ordinal)
+        {
+            "clear_brush", "random_variant", "random_offset", "global_random_variant", "global_random_offset", "create_map"
+        };
 
-        /// <summary>一次点击交给已加载的 Lua。写完重投影格子，避免随后的 SyncGrid 用旧格子盖掉脚本结果。</summary>
+        // 先完整创建新布局，再替换；热加载失败时保留当前 XML 页面，不创建旧 UI。
+        void InstallEditorLayout()
+        {
+            var result = LayoutLoader.Load(FindLayoutDir("EditorLayout"), FindLayoutDir("EditorLayout.user"));
+            if (!result.Ok) { ShowLayoutErrors(result.Errors); return; }
+            var host = new ScriptHost();
+            var pages = new Dictionary<string, LayoutPageControl>(StringComparer.Ordinal);
+            var tabs = new List<TabPage>();
+            var errors = new List<string>();
+            try
+            {
+                foreach (var script in result.Bundle.Scripts)
+                {
+                    try { host.Execute(script.Text, script.Name); }
+                    catch (Exception ex) { throw new InvalidDataException(script.Path + "：" + ex.GetBaseException().Message, ex); }
+                }
+                if (HasDoc) host.Load(Doc);
+                foreach (var tab in result.Bundle.Tabs)
+                {
+                    if (tab.Builtin || tab.Page == null)
+                        throw new InvalidDataException("页面必须使用 XML page，不能使用旧 builtin 页面：" + tab.Id);
+                    foreach (var command in tab.Page.Sections.SelectMany(s => s.Commands))
+                        if (!string.IsNullOrEmpty(command.Handler) && !NativeHandlers.Contains(command.Handler))
+                            throw new InvalidDataException("未知界面动作：" + command.Handler);
+                    LayoutLoader.MarkMissingActions(tab.Page, host.CanRun, host.CanGet);
+                    if (tab.Placement == "dialog") continue;
+                    var view = new LayoutPageControl(tab.Page, host, OnXmlCommitted, RunNativeCommand);
+                    if (_strictLayout) view.ErrorOccurred += ex => throw new InvalidOperationException("XML UI 操作失败", ex);
+                    pages.Add(tab.Id, view);
+                    var page = new TabPage(tab.Title) { Name = tab.Id, AutoScroll = true, Padding = new Padding(6) };
+                    page.Controls.Add(view);
+                    tabs.Add(page);
+                }
+            }
+            catch (Exception ex)
+            {
+                foreach (var tab in tabs) tab.Dispose();
+                errors.Add(ex.GetBaseException().Message);
+                ShowLayoutErrors(errors);
+                return;
+            }
+
+            string selected = ActivePageId;
+            ClearTerrainBrush();
+            tabControlRight.SuspendLayout();
+            var oldTabs = tabControlRight.TabPages.Cast<TabPage>().ToArray();
+            tabControlRight.TabPages.Clear();
+            _editorPages.Clear();
+            _stageHost = host;
+            _layoutBundle = result.Bundle;
+            foreach (var pair in pages) _editorPages.Add(pair.Key, pair.Value);
+            tabControlRight.TabPages.AddRange(tabs.ToArray());
+            foreach (var tab in oldTabs) tab.Dispose();
+            tabControlRight.SelectedTab = tabs.Find(t => t.Name == selected) ?? tabs.FirstOrDefault();
+            tabControlRight.ResumeLayout(true);
+            WireTerrainPalette();
+            RebuildToolsMenu();
+            RefreshEditorPages();
+            RefreshSelectedTerrainUi();
+        }
+
+        void WireTerrainPalette()
+        {
+            var terrain = TerrainPage;
+            if (terrain == null) return;
+            void SelectBrush(PaletteItem item, PaletteTarget target)
+            {
+                _terrainBrush = new PaletteDrag { Item = item, Target = target };
+                terrain.SetText("brush", "画笔：" + item.Label + " → " + PaletteTargetName(target));
+            }
+            terrain.PaletteSelected += SelectBrush;
+            terrain.PaletteActivated += (item, target) =>
+            {
+                SelectBrush(item, target);
+                if (_selectedCellIdx >= 0) ApplyPaletteToCell(_selectedCellIdx, item, target, true);
+            };
+            terrain.PaletteClearRequested += target =>
+            {
+                if (_selectedCellIdx >= 0) ClearPaletteLayer(_selectedCellIdx, target, true);
+            };
+            terrain.PaletteTargetChanged += target =>
+            {
+                if (_terrainBrush != null && _terrainBrush.Target != PaletteTarget.Climate && target != PaletteTarget.Climate)
+                    SelectBrush(_terrainBrush.Item, target);
+                RefreshSelectedTerrainUi();
+            };
+        }
+
+        void RefreshEditorPages()
+        {
+            if (!HasDoc) return;
+            _stageHost.Load(Doc);
+            foreach (var id in _editorPages.Keys) _staleEditorPages.Add(id);
+            RefreshActiveEditorPage();
+        }
+
+        void RefreshActiveEditorPage()
+        {
+            if (!HasDoc || ActivePageId == null || !_editorPages.TryGetValue(ActivePageId, out var page)) return;
+            if (_staleEditorPages.Remove(ActivePageId))
+            {
+                page.SetCell(_selectedCellIdx, refresh: false);
+                page.Reload(Doc);
+            }
+            else page.SetCell(_selectedCellIdx);
+            RefreshSelectedTerrainUi();
+        }
+
+        void OnXmlCommitted()
+        {
+            if (!HasDoc) return;
+            mapCanvas.ReloadCells(Doc);
+            if (_selectedCellIdx >= mapCanvas.Cells.Count) _selectedCellIdx = -1;
+            RefreshEditorPages();
+            RefreshSelectedTerrainUi();
+            AddHistoryState();
+            RefreshRegistryViewIfVisible();
+        }
+
         bool RunEdit(string action, ScriptArgs args)
         {
-            if (!HasDoc) return false;
-            if (_stageHost == null || !_stageHost.CanRun(action))
+            if (!HasDoc || _stageHost == null) return false;
+            if (!_stageHost.CanRun(action))
             {
-                if (_missingEditAction != action)
-                {
-                    _missingEditAction = action;
-                    MessageBox.Show("没有可用的脚本动作：" + action, "布局问题", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                }
+                ShowLayoutErrors(new List<string> { "没有可用的脚本动作：" + action });
                 return false;
             }
             _stageHost.Load(Doc);
-            try
-            {
-                _stageHost.Run(action, args ?? new ScriptArgs());
-            }
+            try { _stageHost.Run(action, args ?? new ScriptArgs()); }
             catch (Exception ex)
             {
-                MessageBox.Show(action + "\n" + ex.GetBaseException().Message, "脚本", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                mapCanvas.ReloadCells(Doc);
+                RefreshEditorPages();
+                ShowLayoutErrors(new List<string> { action + "：" + ex.GetBaseException().Message });
                 return false;
             }
-            mapCanvas?.ReloadCells(Doc);
+            mapCanvas.ReloadCells(Doc);
             return true;
         }
 
-        static Dictionary<string, object> EditInput(params (string Key, object Value)[] pairs)
+        void RunNativeCommand(string name, ScriptArgs args)
         {
-            var input = new Dictionary<string, object>(pairs.Length);
-            foreach (var pair in pairs)
-                input[pair.Key] = pair.Value;
-            return input;
-        }
-
-        static object[] EditList<T>(IEnumerable<T> values)
-        {
-            var list = new List<object>();
-            if (values != null)
+            switch (name)
             {
-                foreach (var value in values)
-                    list.Add(value);
+                case "clear_brush": ClearTerrainBrush(); break;
+                case "random_variant": PerformRandomVariantAction(); break;
+                case "random_offset": PerformRandomOffsetAction(); break;
+                case "global_random_variant": PerformGlobalRandomVariantAction(); break;
+                case "global_random_offset": PerformGlobalRandomOffsetAction(); break;
+                default: throw new InvalidOperationException("未知界面动作：" + name);
             }
-            return list.ToArray();
         }
 
-        static int EditIndex(BtlVector vec, object item)
-        {
-            if (vec?.V == null || item == null) return -1;
-            return vec.V.IndexOf(item);
-        }
+        void ReloadLayoutClick(object sender, EventArgs e) => InstallEditorLayout();
 
-        void CreateStageSlot(TableLayoutPanel parent)
+        void NewMapClick(object sender, EventArgs e)
         {
-            _stageSlot = new TableLayoutPanel
-            {
-                Dock = DockStyle.Top,
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                ColumnCount = 1,
-                Margin = new Padding(0)
-            };
-            _stageSlot.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            parent.Controls.Add(_stageSlot);
-        }
-
-        void TryInstallStageLayout()
-        {
-            string builtin = FindLayoutDir("EditorLayout");
-            string user = FindLayoutDir("EditorLayout.user");
-            var result = LayoutLoader.Load(builtin, Directory.Exists(user) ? user : null);
-            if (!result.Ok)
-            {
-                ShowLayoutErrors(result.Errors);
-                return;
-            }
-            var tab = result.Bundle.Tabs.Find(t => t.Id == "stage");
-            if (tab?.Page == null)
-            {
-                ShowLayoutErrors(new List<string> { "布局里没有 id 为 stage 的页面" });
-                return;
-            }
+            var tab = _layoutBundle?.Tabs.Find(t => t.Id == "newMap" && t.Placement == "dialog");
+            if (tab?.Page == null) { ShowLayoutErrors(new List<string> { "布局中缺少 newMap 对话框" }); return; }
+            using var dialog = new Form { Text = tab.Title, Size = new Size(460, 550), StartPosition = FormStartPosition.CenterParent,
+                AutoScroll = true, MinimizeBox = false, MaximizeBox = false };
             var host = new ScriptHost();
-            var scriptErrors = new List<string>();
-            foreach (var script in result.Bundle.Scripts)
+            host.Load(new BtlFrontDocument { Root = BtlFrontJson.NewTable() });
+            var view = new LayoutPageControl(tab.Page, host, null, (name, args) =>
             {
-                try { host.Execute(script.Text, script.Name); }
-                catch (Exception ex) { scriptErrors.Add(script.Name + ": " + ex.Message); }
-            }
-            LayoutLoader.MarkMissingActions(tab.Page, host.CanRun, host.CanGet);
-            if (HasDoc) host.Load(Doc);
-            var view = new LayoutPageControl(tab.Page, host, OnStageLayoutCommitted);
-            if (HasDoc) view.Reload(Doc);
-            DetachLegacyStageLists();
-            _stageSlot.Controls.Clear();
-            _stageSlot.RowCount = 1;
-            _stageSlot.RowStyles.Clear();
-            _stageSlot.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            _stageSlot.Controls.Add(view, 0, 0);
-            _stageLayout = view;
-            _stageHost = host;
-            if (scriptErrors.Count > 0)
-                ShowLayoutErrors(scriptErrors);
+                if (name != "create_map") throw new InvalidOperationException("新建窗口只支持 create_map");
+                ushort Number(string key) => Convert.ToUInt16(args.Input[key] ?? throw new InvalidDataException("请填写 " + key));
+                ushort w = Number("width"), h = Number("height"), lm = Number("left"), tm = Number("top");
+                ushort pw = Number("play_width"), ph = Number("play_height");
+                if (w == 0 || h == 0 || w > 500 || h > 500 || lm + pw > w || tm + ph > h || pw == 0 || ph == 0)
+                    throw new InvalidDataException("地图尺寸和可游玩区域不匹配");
+                CreateNewMap(w, h, lm, tm, pw, ph, Number("round_limit"), Number("version"), 0);
+                dialog.DialogResult = DialogResult.OK;
+                dialog.Close();
+            });
+            dialog.Controls.Add(view);
+            view.Reload(host.Document);
+            dialog.ShowDialog(this);
         }
 
-        void OnStageLayoutCommitted()
-        {
-            OnDocumentLoaded();
-        }
-
-        void DetachLegacyStageLists()
-        {
-            lvTargets = null;
-            lvWeathers = null;
-            lvReinforces = null;
-            nudTargetType = null;
-            nudTargetValue = null;
-            nudTargetParam1 = null;
-            nudTargetParam2 = null;
-            nudTargetFlag = null;
-            nudWeatherType = null;
-            nudWeatherStart = null;
-            nudWeatherDuration = null;
-            nudRpCellIdx = null;
-            nudRpFactionId = null;
-            nudRpFlag = null;
-            chkRpIsKey = null;
-        }
-
-        void ReloadLayoutClick(object sender, EventArgs e)
-        {
-            var previous = _stageLayout;
-            try
-            {
-                TryInstallStageLayout();
-            }
-            catch (Exception ex)
-            {
-                ShowLayoutErrors(new List<string> { ex.Message });
-                if (previous != null && _stageLayout == null)
-                    _stageLayout = previous;
-            }
-        }
-
-        static void ShowLayoutErrors(List<string> errors)
-        {
-            if (errors == null || errors.Count == 0) return;
-            MessageBox.Show(string.Join("\n", errors), "布局问题", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-        }
+        static Dictionary<string, object> EditInput(params (string Key, object Value)[] pairs) => pairs.ToDictionary(p => p.Key, p => p.Value);
 
         static string FindLayoutDir(string name)
         {
@@ -168,14 +206,18 @@ namespace BtldMapEditor
                 string sibling = Path.GetFullPath(Path.Combine(game, "..", name));
                 if (Directory.Exists(sibling)) return sibling;
             }
-            var dir = new DirectoryInfo(AppContext.BaseDirectory);
-            while (dir != null)
+            for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
             {
                 string candidate = Path.Combine(dir.FullName, name);
                 if (Directory.Exists(candidate)) return candidate;
-                dir = dir.Parent;
             }
             return Path.Combine(AppContext.BaseDirectory, name);
+        }
+
+        void ShowLayoutErrors(List<string> errors)
+        {
+            if (_strictLayout && errors.Count > 0) throw new InvalidDataException(string.Join("\n", errors));
+            if (errors.Count > 0) MessageBox.Show(string.Join("\n", errors), "布局问题", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 }

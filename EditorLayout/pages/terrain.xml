@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<page id="terrain">
+  <section id="brush" kind="label" text="画笔：未选择。点选贴图后拖到地图；V 随机变种，O 随机偏移。"/>
+  <section title="地块标志" kind="form" resolve="cell">
+    <field id="playable" label="可玩地块" widget="check" action="ui_playable"/>
+    <field id="sea" label="海洋" widget="check" action="ui_sea"/>
+  </section>
+  <section title="随机与画笔" kind="form">
+    <actions>
+      <action id="clear" label="取消画笔" handler="clear_brush"/>
+      <action id="variant" label="全局随机变种" handler="global_random_variant"/>
+      <action id="offset" label="全局随机偏移" handler="global_random_offset"/>
+    </actions>
+  </section>
+  <section title="地形图层" kind="palettes">
+    <palette title="地质" target="Climate"/>
+    <palette title="主地形" target="Main"/>
+    <palette title="次地形" target="Secondary"/>
+    <palette title="装饰" target="Decor"/>
+  </section>
+  <section title="图层属性（选中格子后修改）" kind="form" resolve="cell">
+    <group title="主地形">
+      <row label="贴图 ID / 变种"><field id="main_id" type="u8" action="ui_main_id"/><field id="main_variant" type="u8" action="ui_main_variant"/></row>
+      <row label="偏移 X / Y"><field id="main_dx" type="i8" action="ui_main_dx"/><field id="main_dy" type="i8" action="ui_main_dy"/></row>
+    </group>
+    <group title="次地形">
+      <row label="贴图 ID / 变种"><field id="secondary_id" type="u8" action="ui_secondary_id"/><field id="secondary_variant" type="u8" action="ui_secondary_variant"/></row>
+      <row label="偏移 X / Y"><field id="secondary_dx" type="i8" action="ui_secondary_dx"/><field id="secondary_dy" type="i8" action="ui_secondary_dy"/></row>
+    </group>
+    <group title="装饰">
+      <row label="贴图 ID / 变种"><field id="decor_id" type="u8" action="ui_decor_id"/><field id="decor_variant" type="u8" action="ui_decor_variant"/></row>
+      <row label="偏移 X / Y"><field id="decor_dx" type="i8" action="ui_decor_dx"/><field id="decor_dy" type="i8" action="ui_decor_dy"/></row>
+    </group>
+  </section>
+  <section kind="label" text="Shift + 左键拖动地图可微调当前贴图层的偏移。"/>
+</page>

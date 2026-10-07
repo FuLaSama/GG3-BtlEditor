@@ -176,9 +176,14 @@ namespace BtlCore.Scripting
         {
             if (st == null) throw new FrontEditException("路径无法定位");
             int index = StructMemberIndex(structName, segment);
-            if (!SoftSchema.TryStructMembers(structName, out var members) || index >= members.Length)
-                throw new FrontEditException("路径无法定位");
-            FrontEdit.SetMember(st, index, Coerce(members[index].T, value));
+            string t = index < st.Layout.Count ? st.Layout[index] : null;
+            if (t == null)
+            {
+                if (!SoftSchema.TryStructMembers(structName, out var members) || index >= members.Length)
+                    throw new FrontEditException("路径无法定位");
+                t = members[index].T;
+            }
+            FrontEdit.SetMember(st, index, value == null ? null : Coerce(t, value));
         }
 
         public static BtlTable AppendTable(BtlFrontDocument doc, string path)
@@ -189,6 +194,32 @@ namespace BtlCore.Scripting
             var row = BtlFrontJson.NewTable();
             FrontEdit.Insert(found.Vector, found.Vector.V.Count, row);
             return row;
+        }
+
+        /// <summary>把 Root.stage_metadata.targets 这类旧路径收成 /2/0[index]。</summary>
+        public static string IndexedRow(string legacyPath, int index)
+        {
+            var steps = Segments(legacyPath);
+            string type = SoftSchema.RootType;
+            var ids = new int[steps.Length];
+            for (int i = 0; i < steps.Length; i++)
+            {
+                int id = FieldId(type, steps[i]);
+                ids[i] = id;
+                if (!SoftSchema.TryGet(type, id, out var hint))
+                    throw new FrontEditException("路径无法定位");
+                type = NextType(hint);
+            }
+            var text = new System.Text.StringBuilder();
+            for (int i = 0; i < ids.Length; i++)
+            {
+                text.Append('/');
+                text.Append(ids[i].ToString(CultureInfo.InvariantCulture));
+            }
+            text.Append('[');
+            text.Append(index.ToString(CultureInfo.InvariantCulture));
+            text.Append(']');
+            return text.ToString();
         }
 
         public static string ElementType(BtlFrontDocument doc, string path)
@@ -300,10 +331,22 @@ namespace BtlCore.Scripting
 
         static object ReadScalar(Loc parent, string segment)
         {
+            if (parent?.Node is BtlStruct st)
+            {
+                var fields = SoftSchema.Schema?.StructMembers(parent.TypeName);
+                if (fields == null) return null;
+                for (int i = 0; i < fields.Count; i++)
+                {
+                    if (!string.Equals(fields[i].Name, segment, StringComparison.Ordinal)) continue;
+                    return i < st.V.Count ? st.V[i] : null;
+                }
+                return null;
+            }
             if (parent?.Node is not BtlTable tbl) return null;
             int id = FieldId(parent.TypeName, segment);
-            if (!tbl.F.TryGetValue(id, out var node) || node is not BtlScalar sc) return null;
-            return sc.V;
+            if (!tbl.F.TryGetValue(id, out var node) || node == null) return null;
+            if (node is BtlScalar sc) return sc.V;
+            return true;
         }
 
         static void WriteScalar(Loc parent, string segment, object value)
@@ -345,6 +388,26 @@ namespace BtlCore.Scripting
         public static object Coerce(string t, object value)
         {
             if (value == null) return null;
+            if (t == "u64" || t == "i64")
+            {
+                try
+                {
+                    // 精确值不能经 double 中转。
+                    if (value is string text)
+                        return t == "u64" ? (object)ulong.Parse(text, NumberStyles.Integer, CultureInfo.InvariantCulture)
+                            : long.Parse(text, NumberStyles.Integer, CultureInfo.InvariantCulture);
+                    if (value is ulong unsigned)
+                        return t == "u64" ? (object)unsigned : checked((long)unsigned);
+                    if (value is long signed)
+                        return t == "i64" ? (object)signed : checked((ulong)signed);
+                    if (value is double number && Math.Abs(number) > 9_007_199_254_740_991)
+                        throw new FrontEditException("整数超过 Lua 精确范围，请用 editor.data.set_integer 和十进制字符串");
+                }
+                catch (Exception ex) when (ex is OverflowException or FormatException)
+                {
+                    throw new FrontEditException("整数超出声明类型的范围");
+                }
+            }
             if (t == "bool")
             {
                 if (value is bool b) return b;
@@ -414,6 +477,8 @@ namespace BtlCore.Scripting
             if (elem == "table") return BtlFrontJson.NewTable();
             if (elem == "struct")
             {
+                if (found.Vector.StructLayout.Count > 0)
+                    return FrontEdit.NewStruct(found.Vector.StructLayout);
                 string name = found.Hint.StructName ?? found.Hint.VectorElemTable;
                 if (string.IsNullOrEmpty(name) || !SoftSchema.TryStructMembers(name, out _))
                     throw new FrontEditException("路径无法定位");
@@ -429,10 +494,8 @@ namespace BtlCore.Scripting
             var schema = SoftSchema.Schema ?? throw new FrontEditException("路径无法定位");
             if (segment.StartsWith('#'))
             {
-                if (!int.TryParse(segment.AsSpan(1), NumberStyles.Integer, CultureInfo.InvariantCulture, out int id))
+                if (!int.TryParse(segment.AsSpan(1), NumberStyles.Integer, CultureInfo.InvariantCulture, out int id) || id < 0)
                     throw new FrontEditException("路径无法定位");
-                var fields = schema.StructMembers(structName);
-                if (id < 0 || id >= fields.Count) throw new FrontEditException("路径无法定位");
                 return id;
             }
             if (!schema.TryGetFieldByName(structName, segment, out var field))

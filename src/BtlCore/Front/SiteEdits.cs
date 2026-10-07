@@ -2,7 +2,7 @@
  * SiteEdits.cs
  *
  * 画布投影：建筑和工事按格子写回 events，没有这两张子表的脚本事件原样保留。
- * 改建筑、工事和势力在 scripts/site.lua。
+ * 改建筑和工事在 scripts/site/，势力在 scripts/faction/势力.lua。
  */
 namespace BtlCore.Front
 {

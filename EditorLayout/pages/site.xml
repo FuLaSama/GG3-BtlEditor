@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<page id="site">
+  <section title="建筑配置" kind="form" bind="/5/0" resolve="building">
+    <row label="所属势力 ID:">
+      <field id="flag" widget="number" type="u16" bind="/3/0.0"/>
+    </row>
+    <row label="建筑配置 ID:">
+      <field id="type" widget="number" type="u16" bind="/3/0.1" lookup="building"/>
+    </row>
+    <row label="参数 2:">
+      <field id="extra" widget="number" type="u8" bind="/3/0.2"/>
+    </row>
+    <row label="参数 3:">
+      <field id="owner" widget="number" type="u8" bind="/3/0.3"/>
+    </row>
+    <row label="贴图偏移 dx / dy:">
+      <field id="dx" widget="number" type="i8" bind="/3/0.4"/>
+      <field id="dy" widget="number" type="i8" bind="/3/0.5"/>
+    </row>
+    <row label="参数 6:">
+      <field id="field6" widget="number" type="u8" bind="/3/6"/>
+    </row>
+    <actions>
+      <action id="add" label="添加建筑" script="place_building"/>
+      <action id="update" label="保存选中修改" script="apply_building"/>
+      <action id="delete" label="删除选中建筑" script="delete_event" confirm="确定要删除选中的事件吗？"/>
+    </actions>
+  </section>
+  <section title="军事工事配置" kind="form" bind="/5/0" resolve="fort">
+    <row label="工事配置 ID:">
+      <field id="fort_id" widget="number" type="u8" bind="/4/0" lookup="fort"/>
+    </row>
+    <row label="参数 2:">
+      <field id="field1" widget="number" type="u16" bind="/1"/>
+    </row>
+    <row label="参数 3:">
+      <field id="field3" widget="number" type="u8" bind="/4/3"/>
+    </row>
+    <actions>
+      <action id="add" label="添加工事" script="place_fort"/>
+      <action id="update" label="保存选中修改" script="apply_fort"/>
+      <action id="delete" label="删除选中工事" script="delete_event" confirm="确定要删除选中的事件吗？"/>
+    </actions>
+  </section>
+</page>

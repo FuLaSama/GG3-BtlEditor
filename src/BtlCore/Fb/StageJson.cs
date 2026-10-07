@@ -44,13 +44,22 @@ namespace BtlCore.Fb
 
             string format = obj["format"]?.GetValue<string>();
             if (string.Equals(format, "btlfront", StringComparison.OrdinalIgnoreCase))
-                return BtlFrontJson.Parse(json);
+                return UnpackBehaviorTrees(BtlFrontJson.Parse(json));
 
             schema ??= SoftSchema.Schema;
             if (schema == null)
                 throw new InvalidDataException("打开 JSON 需要 battle.fbs");
 
-            return SchemaDumpToFront.ToFront(obj, schema, notes);
+            return UnpackBehaviorTrees(SchemaDumpToFront.ToFront(obj, schema, notes));
+        }
+
+        // JSON 导入也应与 BTL 读取一致：四字节空头是零棵树，原始打包
+        // 字节解码为 JSON 节点。只在导入时归一化，不在 getter 中改文档。
+        static BtlFrontDocument UnpackBehaviorTrees(BtlFrontDocument document)
+        {
+            if (document.Root.F.TryGetValue(10, out var node) && node is BtlVector vector)
+                PackedJsonStream.TryUnpackVector(vector);
+            return document;
         }
 
         static string WriteDocument(BtlFrontDocument doc, FbsSchema schema, bool named)

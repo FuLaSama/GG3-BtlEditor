@@ -1,14 +1,45 @@
 <?xml version="1.0" encoding="utf-8"?>
 <editorLayout format="1">
   <tabs>
+    <tab id="terrain" title="地形修改" page="pages/terrain.xml"/>
+    <tab id="unit" title="部队修改" page="pages/unit.xml"/>
+    <tab id="site" title="建筑修改" page="pages/site.xml"/>
+    <tab id="faction" title="阵营/势力" page="pages/faction.xml"/>
+    <tab id="country" title="国家行为树" page="pages/country.xml"/>
     <tab id="stage" title="全局配置" page="pages/stage.xml"/>
+    <tab id="newMap" title="新建关卡地图" page="pages/new-map.xml" placement="dialog"/>
   </tabs>
   <scripts>
-    <script src="scripts/stage.lua"/>
-    <script src="scripts/terrain.lua"/>
-    <script src="scripts/unit.lua"/>
-    <script src="scripts/site.lua"/>
-    <script src="scripts/map.lua"/>
-    <script src="scripts/country.lua"/>
+    <script src="scripts/common/读取工具.lua"/>
+    <script src="scripts/common/游戏对象.lua"/>
+    <script src="scripts/common/业务对象.lua"/>
+    <script src="scripts/common/地图操作.lua"/>
+    <script src="scripts/common/行为树对象.lua"/>
+    <script src="scripts/stage/回合.lua"/>
+    <script src="scripts/stage/关卡目标.lua"/>
+    <script src="scripts/stage/增兵部署点.lua"/>
+    <script src="scripts/stage/天气.lua"/>
+    <script src="scripts/terrain/装饰.lua"/>
+    <script src="scripts/terrain/次地形.lua"/>
+    <script src="scripts/terrain/主地形.lua"/>
+    <script src="scripts/terrain/地质.lua"/>
+    <script src="scripts/terrain/地形粘贴.lua"/>
+    <script src="scripts/unit/部队AI行为.lua"/>
+    <script src="scripts/unit/将领配置.lua"/>
+    <script src="scripts/unit/特种部队配置.lua"/>
+    <script src="scripts/unit/基础部队信息.lua"/>
+    <script src="scripts/site/建筑配置.lua"/>
+    <script src="scripts/site/军事工事配置.lua"/>
+    <script src="scripts/faction/势力.lua"/>
+    <script src="scripts/faction/路线.lua"/>
+    <script src="scripts/map/地图尺寸.lua"/>
+    <script src="scripts/map/粘贴部队.lua"/>
+    <script src="scripts/map/粘贴地标.lua"/>
+    <script src="scripts/country/节点树.lua"/>
+    <script src="scripts/country/节点属性.lua"/>
+    <script src="scripts/country/行为树列表.lua"/>
+    <script src="scripts/country/行为树属性.lua"/>
+    <script src="scripts/ui/字段绑定.lua"/>
+    <script src="scripts/tools/常用工具.lua"/>
   </scripts>
 </editorLayout>

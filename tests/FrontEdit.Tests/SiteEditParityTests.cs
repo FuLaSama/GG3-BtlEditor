@@ -6,18 +6,6 @@ namespace BtlCore.Front.Tests;
 
 public class SiteEditParityTests
 {
-    static string SiteLua()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            string path = Path.Combine(dir.FullName, "EditorLayout", "scripts", "site.lua");
-            if (File.Exists(path)) return File.ReadAllText(path);
-            dir = dir.Parent;
-        }
-        throw new FileNotFoundException("EditorLayout/scripts/site.lua");
-    }
-
     static BtlTable Relation(ushort factionId, ushort item)
     {
         var row = BtlFrontJson.NewTable();
@@ -68,7 +56,10 @@ public class SiteEditParityTests
     {
         var host = new ScriptHost();
         host.Load(doc);
-        host.Execute(SiteLua(), "site.lua");
+        EditorScripts.Load(host,
+            "site/建筑配置.lua",
+            "site/军事工事配置.lua",
+            "faction/势力.lua");
         return host;
     }
 

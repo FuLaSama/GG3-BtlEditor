@@ -507,6 +507,7 @@ namespace BtlCore.Fb
                             Warn(path, $"struct 向量越界，截断 {count}→{fit}");
                             count = fit;
                         }
+                        foreach (var m in members) vec.StructLayout.Add(m.T);
                         for (int i = 0; i < count; i++)
                         {
                             var st = ReadInlineStruct(data + i * stride, members, path + "/i" + i);
@@ -558,6 +559,7 @@ namespace BtlCore.Fb
                 {
                     var sc = ReadScalarAt(p, m.T, m.Size, path);
                     st.V.Add(sc?.V ?? 0);
+                    st.Layout.Add(m.T);
                     p += m.Size;
                 }
                 return st;
@@ -575,7 +577,10 @@ namespace BtlCore.Fb
                 Info(path, $"未知内联块按 struct<u8×{width}>");
                 var st = new BtlStruct { T = "struct" };
                 for (int i = 0; i < width; i++)
+                {
                     st.V.Add(_d[pos + i]);
+                    st.Layout.Add("u8");
+                }
                 return st;
             }
 

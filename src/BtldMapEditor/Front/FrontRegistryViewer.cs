@@ -875,17 +875,11 @@ namespace BtldMapEditor.Front
                     var edit = new ToolStripMenuItem("编辑成员内容");
                     edit.Click += (s, a) => StartItemEditing(hit.Item);
                     cms.Items.Add(edit);
-                    if (vt.Key == st.V.Count - 1 && st.V.Count > 0)
+                    if (vt.Key >= 0 && vt.Key < st.V.Count)
                     {
-                        var del = new ToolStripMenuItem($"删除尾部成员 [索引 #{vt.Key}]");
-                        del.Click += (s, a) =>
-                        {
-                            if (MessageBox.Show($"确定删除 struct 尾部成员 #{vt.Key}？", "确认删除",
-                                    MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
-                                return;
-                            if (!TryFrontEdit(() => FrontEdit.RemoveStructTail(st, vt.Key))) return;
-                            NotifyChanged(refreshTree: false);
-                        };
+                        int index = vt.Key;
+                        var del = new ToolStripMenuItem($"删除成员 [索引 #{index}]");
+                        del.Click += (s, a) => DeleteStructMember(st, index);
                         cms.Items.Add(del);
                     }
                 }
@@ -1026,32 +1020,46 @@ namespace BtldMapEditor.Front
             }
             else if (tag.Target is BtlStruct st)
             {
-                if (HasFbsNames && !string.IsNullOrEmpty(tag.SchemaType))
-                {
-                    int layout = _fbs.StructMembers(tag.SchemaType).Count;
-                    if (layout > 0 && st.V.Count >= layout)
+                string suggested = SuggestedStructMemberType(tag.SchemaType, st.V.Count) ?? "u16";
+                var created = ShowAddFieldDialog(null, st.V.Count, lockId: true, suggested);
+                if (created == null) return;
+                BtlNode node = created.Value.node;
+                int index = st.V.Count;
+                object stored = node is BtlScalar sc ? sc.V : node;
+                string layoutType = node is BtlScalar scalar ? scalar.T : null;
+                if (!TryFrontEdit(() =>
                     {
-                        MessageBox.Show(
-                            "这个 struct 的成员个数由 fbs 布局决定，再加的成员写回 BTL 时会被丢掉。",
-                            "新建成员", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                        return;
-                    }
-                }
-                string memType = SuggestedStructMemberType(tag.SchemaType, st.V.Count) ?? "u16";
-                string input = ShowEditDialog("new", memType, "0");
-                if (input == null) return;
-                try
-                {
-                    object parsedMember = ParseScalar(memType, input);
-                    if (!TryFrontEdit(() => FrontEdit.SetMember(st, st.V.Count, parsedMember))) return;
-                    NotifyChanged(refreshTree: false);
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show("无法解析值：\n" + ex.Message, "注册表编辑", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                }
+                        if (IsInlineScalar(layoutType) && st.Layout.Count == index)
+                            st.Layout.Add(layoutType);
+                        if (IsInlineScalar(layoutType)
+                            && _shown.Parent?.Tag is NodeTag parent
+                            && parent.Target is BtlVector vec
+                            && vec.StructLayout.Count == index)
+                            vec.StructLayout.Add(layoutType);
+                        FrontEdit.SetMember(st, index, stored);
+                    })) return;
+                NotifyChanged(refreshTree: IsNavigableNode(node));
             }
         }
+
+        void DeleteStructMember(BtlStruct st, int index)
+        {
+            BtlVector shared = null;
+            if (_shown?.Parent?.Tag is NodeTag parent
+                && parent.Target is BtlVector vec
+                && (vec.Elem == "struct" || vec.StructLayout.Count > 0)
+                && index < vec.StructLayout.Count)
+                shared = vec;
+            string extra = shared == null ? "" : "\n它所在的结构体数组里，每一项的这一位都会去掉。";
+            if (MessageBox.Show($"确定删除成员 #{index}？后面的成员会前移。{extra}", "确认删除",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                return;
+            if (!TryFrontEdit(() => FrontEdit.RemoveMember(st, index, shared))) return;
+            NotifyChanged(refreshTree: true);
+        }
+
+        static bool IsInlineScalar(string type) => type is
+            "bool" or "u8" or "i8" or "u16" or "i16" or "u32" or "i32" or "u64" or "i64" or "f32" or "f64";
 
         bool TryFrontEdit(Action edit)
         {
@@ -1579,8 +1587,6 @@ namespace BtldMapEditor.Front
             int matched = Array.FindIndex(FrontScalarTypes, t =>
                 string.Equals(t, detected, StringComparison.OrdinalIgnoreCase));
             cbType.SelectedIndex = matched >= 0 ? matched : Array.FindIndex(FrontScalarTypes, t => t == "u16");
-            bool lockType = vec.V.Count > 0 && matched >= 0;
-            cbType.Enabled = !lockType;
             ApplyTypeDefault();
             cbType.SelectedIndexChanged += (s, e) => ApplyTypeDefault();
 
@@ -1597,13 +1603,6 @@ namespace BtldMapEditor.Front
 
             if (form.ShowDialog(this) != DialogResult.OK) return null;
             string typeName = cbType.SelectedItem as string ?? "u16";
-            if (!string.IsNullOrEmpty(vec.Elem) && vec.Elem != "unknown"
-                && !string.Equals(NormalizePickerType(vec.Elem), NormalizePickerType(typeName), StringComparison.OrdinalIgnoreCase))
-            {
-                if (MessageBox.Show($"这个数组的元素类型是 {vec.Elem}，要添加 {typeName} 吗？类型混用写回可能出错。",
-                        "类型不一致", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
-                    return null;
-            }
             try
             {
                 BtlNode node = CreateNodeFromType(typeName, txtVal.Text.Trim());
@@ -1615,16 +1614,6 @@ namespace BtldMapEditor.Front
                 MessageBox.Show("无法创建元素：\n" + ex.Message, "注册表编辑", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return null;
             }
-        }
-
-        static string NormalizePickerType(string t)
-        {
-            if (string.IsNullOrEmpty(t)) return t;
-            t = t.Trim().ToLowerInvariant();
-            if (t.StartsWith("table")) return "table";
-            if (t.StartsWith("vector")) return "vector";
-            if (t.StartsWith("struct")) return "struct";
-            return t;
         }
 
         static BtlNode CreateNodeFromType(string typeName, string initialText, string vectorElem = null)

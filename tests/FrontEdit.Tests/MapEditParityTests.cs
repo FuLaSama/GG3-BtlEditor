@@ -6,18 +6,6 @@ namespace BtlCore.Front.Tests;
 
 public class MapEditParityTests
 {
-    static string MapLua()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            string path = Path.Combine(dir.FullName, "EditorLayout", "scripts", "map.lua");
-            if (File.Exists(path)) return File.ReadAllText(path);
-            dir = dir.Parent;
-        }
-        throw new FileNotFoundException("EditorLayout/scripts/map.lua");
-    }
-
     static BtlFrontDocument Sample()
     {
         var doc = new BtlFrontDocument { Root = BtlFrontJson.NewTable() };
@@ -61,7 +49,11 @@ public class MapEditParityTests
     {
         var host = new ScriptHost();
         host.Load(doc);
-        host.Execute(MapLua(), "map.lua");
+        EditorScripts.Load(host,
+            "map/地图尺寸.lua",
+            "map/粘贴部队.lua",
+            "map/粘贴地标.lua",
+            "faction/路线.lua");
         return host;
     }
 

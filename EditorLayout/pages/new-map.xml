@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<page id="newMap">
+  <section title="地图尺寸和可玩区域" kind="form">
+    <field id="width" label="地图宽度" type="u16" min="1" max="500" default="30"/>
+    <field id="height" label="地图高度" type="u16" min="1" max="500" default="30"/>
+    <field id="left" label="左侧不可玩留白" type="u16" max="500" default="0"/>
+    <field id="top" label="顶部不可玩留白" type="u16" max="500" default="0"/>
+    <field id="play_width" label="可玩区域宽度" type="u16" min="1" max="500" default="30"/>
+    <field id="play_height" label="可玩区域高度" type="u16" min="1" max="500" default="30"/>
+    <field id="round_limit" label="总回合" type="u16" default="0"/>
+    <field id="version" label="版本" type="u16" default="1"/>
+    <actions><action id="create" label="创建地图" handler="create_map"/></actions>
+  </section>
+</page>

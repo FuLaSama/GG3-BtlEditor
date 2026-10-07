@@ -6,18 +6,6 @@ namespace BtlCore.Front.Tests;
 
 public class TerrainEditParityTests
 {
-    static string TerrainLua()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            string path = Path.Combine(dir.FullName, "EditorLayout", "scripts", "terrain.lua");
-            if (File.Exists(path)) return File.ReadAllText(path);
-            dir = dir.Parent;
-        }
-        throw new FileNotFoundException("EditorLayout/scripts/terrain.lua");
-    }
-
     static BtlStruct Attr(byte id, byte variant, sbyte dx, sbyte dy) =>
         FrontEdit.StructFromFbs("TileAttr", id, variant, dx, dy);
 
@@ -46,7 +34,12 @@ public class TerrainEditParityTests
     {
         var host = new ScriptHost();
         host.Load(doc);
-        host.Execute(TerrainLua(), "terrain.lua");
+        EditorScripts.Load(host,
+            "terrain/装饰.lua",
+            "terrain/次地形.lua",
+            "terrain/主地形.lua",
+            "terrain/地质.lua",
+            "terrain/地形粘贴.lua");
         return host;
     }
 

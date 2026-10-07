@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<page id="faction">
+  <section title="势力" kind="list" bind="/4/0">
+    <columns>
+      <column header="编号" bind="/0.0"/>
+      <column header="国家" bind="/0.1"/>
+      <column header="阵营" bind="/0.2"/>
+    </columns>
+    <fields>
+      <field id="id" label="编号" widget="number" type="u16" bind="/0.0"/>
+      <field id="country" label="国家" widget="number" type="u16" bind="/0.1"/>
+      <field id="camp" label="阵营" widget="number" type="u8" bind="/0.2"/>
+      <field id="is_ai" label="电脑" widget="number" type="u8" bind="/0.3"/>
+      <field id="val5" label="将领上限" widget="number" type="u8" bind="/0.4"/>
+      <field id="align1" label="对齐" widget="number" type="u8" bind="/0.5"/>
+      <field id="gold" label="金币" widget="number" type="u32" bind="/0.6"/>
+      <field id="tech" label="科技" widget="number" type="u32" bind="/0.7"/>
+      <field id="income" label="收入倍率" widget="number" type="f32" bind="/0.8"/>
+      <field id="damage" label="伤害倍率" widget="number" type="f32" bind="/0.9"/>
+      <field id="hp" label="生命倍率" widget="number" type="f32" bind="/0.10"/>
+      <field id="r" label="颜色 R" type="u8" bind="/0.11" shift="24" width="8"/>
+      <field id="g" label="颜色 G" type="u8" bind="/0.11" shift="16" width="8"/>
+      <field id="b" label="颜色 B" type="u8" bind="/0.11" shift="8" width="8"/>
+      <field id="a" label="颜色 A" type="u8" bind="/0.11" shift="0" width="8"/>
+      <field id="align2" label="对齐2" widget="number" type="u16" bind="/0.12"/>
+      <field id="config_id" label="配置" widget="number" type="u16" bind="/0.13"/>
+      <field id="general_flag" label="将领标志" widget="number" type="u8" bind="/7"/>
+      <field id="config_ref" label="配置引用" widget="number" type="u16" bind="/8"/>
+    </fields>
+    <actions>
+      <action id="add" label="添加势力" script="add_faction"/>
+      <action id="update" label="保存选中修改" script="apply_faction"/>
+      <action id="delete" label="删除选中势力" script="delete_faction" confirm="确定要删除选中的势力吗？"/>
+      <action id="move_up" label="上移" script="move_faction_up"/>
+      <action id="move_down" label="下移" script="move_faction_down"/>
+    </actions>
+  </section>
+  <section title="路线" kind="list" bind="/6/1">
+    <columns>
+      <column header="标志" bind="/0"/>
+      <column header="格子列表" bind="/1"/>
+    </columns>
+    <fields>
+      <field id="flag" label="标志" widget="number" type="u16" bind="/0"/>
+      <field id="cells" label="格子列表（逗号分隔）" widget="integers" bind="/1"/>
+    </fields>
+    <actions>
+      <action id="add" label="添加路线" script="add_route"/>
+      <action id="update" label="保存路线" script="set_route"/>
+      <action id="delete" label="删除选中路线" script="delete_route" confirm="确定要删除选中的路线吗？"/>
+    </actions>
+  </section>
+</page>

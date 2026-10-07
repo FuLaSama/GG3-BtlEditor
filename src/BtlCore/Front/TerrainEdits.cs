@@ -2,11 +2,11 @@
  * TerrainEdits.cs
  *
  * 画布投影：从 tiles / attributes 摊开格子，再按同一顺序写回。
- * 刷地质、分层、偏移和粘贴在 scripts/terrain.lua。
+ * 刷地质、分层、偏移和粘贴在 scripts/terrain/。
  *
  * 高字节：bit1 海，bit2 装饰，bit3 主地形，bit4 次地形。
  * attributes 按格子顺序只收有标志的层，一层一个 TileAttr，顺序是装饰、主地形、次地形。
- * 装饰在视图里总有一份 struct；标志关掉时不写进向量。主地形、次地形关掉就是 null。
+ * 没有属性的层使用 null，写入缺失的属性时才创建 struct。
  */
 using System.Globalization;
 
@@ -41,6 +41,7 @@ namespace BtlCore.Front
             int attrCount = attrs?.V?.Count ?? 0;
             int tileCount = tiles?.V?.Count ?? 0;
             int total = width * height;
+            cells.Capacity = total;
             for (int i = 0; i < total; i++)
             {
                 ushort terrain = 9001;
@@ -56,7 +57,7 @@ namespace BtlCore.Front
                 cells.Add(new Cell
                 {
                     Terrain = terrain,
-                    Decor = decor ?? NewAttr(0, 0, 0, 0),
+                    Decor = decor,
                     Main = main,
                     Secondary = secondary,
                 });

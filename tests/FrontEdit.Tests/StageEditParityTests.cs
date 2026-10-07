@@ -6,18 +6,6 @@ namespace BtlCore.Front.Tests;
 
 public class StageEditParityTests
 {
-    static string StageLua()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            string path = Path.Combine(dir.FullName, "EditorLayout", "scripts", "stage.lua");
-            if (File.Exists(path)) return File.ReadAllText(path);
-            dir = dir.Parent;
-        }
-        throw new FileNotFoundException("EditorLayout/scripts/stage.lua");
-    }
-
     static BtlFrontDocument Blank() => new BtlFrontDocument { Root = BtlFrontJson.NewTable() };
 
     static BtlFrontDocument Clone(BtlFrontDocument doc) => BtlFrontJson.Parse(BtlFrontJson.Serialize(doc));
@@ -26,7 +14,11 @@ public class StageEditParityTests
     {
         var host = new ScriptHost();
         host.Load(doc);
-        host.Execute(StageLua(), "stage.lua");
+        EditorScripts.Load(host,
+            "stage/回合.lua",
+            "stage/关卡目标.lua",
+            "stage/增兵部署点.lua",
+            "stage/天气.lua");
         return host;
     }
 

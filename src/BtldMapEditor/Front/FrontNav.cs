@@ -363,6 +363,7 @@ namespace BtldMapEditor.Front
             }
 
             int total = terrain.Count;
+            cells.Capacity = total;
             for (int i = 0; i < total; i++)
             {
                 var tile = terrain[i];
@@ -394,6 +395,9 @@ namespace BtldMapEditor.Front
         public static void SyncGrid(BtlFrontDocument doc, IList<MapCell> cells)
         {
             if (doc?.Root == null || cells == null || cells.Count == 0) return;
+            // Lua 修改后画布已经从文档重新投影。此时无需再重建向量，否则会
+            // 改变部队顺序、丢弃重叠部队或已知图层之后的额外属性。
+            if (GridMatchesDocument(doc, cells)) return;
             var views = new List<TerrainEdits.Cell>(cells.Count);
             foreach (var cell in cells)
             {
@@ -428,6 +432,42 @@ namespace BtldMapEditor.Front
                 forts[cell.Index] = cell.TriggerFort;
             }
             SiteEdits.SyncEvents(doc, buildings, forts);
+        }
+
+        static bool GridMatchesDocument(BtlFrontDocument doc, IList<MapCell> cells)
+        {
+            int width = MapWidth(doc), height = MapHeight(doc);
+            if (width * height != cells.Count || width <= 0) return false;
+            var tiles = Tiles(doc); var attrs = Attrs(doc);
+            int attrIndex = 0, attrCount = attrs?.V.Count ?? 0;
+            var units = new Dictionary<int, BtlTable>();
+            foreach (var unit in TableItems(Agents(doc))) units[AgentU16(unit, 0)] = unit;
+            var buildings = new Dictionary<int, BtlTable>();
+            var forts = new Dictionary<int, BtlTable>();
+            foreach (var ev in TableItems(Events(doc)))
+            {
+                int index = (int)ScalarI64(ev, 0);
+                if (Child(ev, 3) != null) buildings[index] = ev;
+                if (Child(ev, 4) != null) forts[index] = ev;
+            }
+            for (int i = 0; i < cells.Count; i++)
+            {
+                ushort terrain = i < (tiles?.V.Count ?? 0) ? (ushort)ToI64(tiles.V[i]) : (ushort)9001;
+                BtlStruct decor = null, main = null, secondary = null;
+                if ((terrain & 1024) != 0 && attrIndex < attrCount) decor = attrs.V[attrIndex++] as BtlStruct;
+                if ((terrain & 2048) != 0 && attrIndex < attrCount) main = attrs.V[attrIndex++] as BtlStruct;
+                if ((terrain & 4096) != 0 && attrIndex < attrCount) secondary = attrs.V[attrIndex++] as BtlStruct;
+                units.TryGetValue(i, out var unit); buildings.TryGetValue(i, out var building); forts.TryGetValue(i, out var fort);
+                var actual = cells[i];
+                if (actual.Index != i || actual.X != i % width || actual.Y != i / width
+                    || actual.Terrain != terrain || !ReferenceEquals(actual.Unit, unit)
+                    || !ReferenceEquals(actual.TriggerBldg, building)
+                    || !ReferenceEquals(actual.TriggerFort, fort)
+                    || (terrain & 1024) != 0 && !ReferenceEquals(actual.Attr, decor)
+                    || (terrain & 2048) != 0 && !ReferenceEquals(actual.AttrA2, main)
+                    || (terrain & 4096) != 0 && !ReferenceEquals(actual.AttrA3, secondary)) return false;
+            }
+            return true;
         }
     }
 

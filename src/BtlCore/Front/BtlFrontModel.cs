@@ -43,11 +43,13 @@ namespace BtlCore.Front
     }
 
     /// <summary>
-    /// 内联 struct。V[i] 对应 .fbs 第 i 个成员，通常是裸数值，偶尔嵌套。
+    /// 内联 struct。V[i] 是第 i 个成员的值。
+    /// Layout[i] 是该成员的标量类型。读文件时从 fbs 抄来，之后可以改，写出时以它为准。
     /// </summary>
     public sealed class BtlStruct : BtlNode
     {
         public List<object> V { get; } = new List<object>();
+        public List<string> Layout { get; } = new List<string>();
     }
 
     /// <summary>
@@ -60,6 +62,8 @@ namespace BtlCore.Front
         public string Elem { get; set; }
         /// <summary>特殊编码名。country_ai_bt = 国家行为树打包字节流已解成 JSON。</summary>
         public string Enc { get; set; }
+        /// <summary>元素是 struct 时，整条向量共用的成员类型。空则写出时再看元素自己的 Layout 或 fbs。</summary>
+        public List<string> StructLayout { get; } = new List<string>();
         public List<object> V { get; } = new List<object>();
     }
 
@@ -70,7 +74,7 @@ namespace BtlCore.Front
         public BtlTable Root { get; set; }
     }
 
-    /// <summary>BtlFront ↔ JSON 文本。撤销栈、克隆都走序列化再解析，保证深拷贝。</summary>
+    /// <summary>BtlFront ↔ JSON 文本，以及不经 JSON 的深拷贝和文档比较。</summary>
     public static class BtlFrontJson
     {
         public static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
@@ -135,11 +139,89 @@ namespace BtlCore.Front
 
         public static BtlScalar Scalar(string t, object v) => new BtlScalar { T = t, V = v };
 
-        /// <summary>经 JSON 往返做深拷贝，避免共享子树被两处同时改。</summary>
+        /// <summary>直接深拷贝树，保留数值类型、结构布局及打包 JSON，避免中间 JSON 分配。</summary>
         public static BtlNode Clone(BtlNode node)
         {
             if (node == null) return null;
-            return ReadNode(WriteNode(node));
+            if (node is BtlScalar scalar) return new BtlScalar { T = scalar.T, V = CloneValue(scalar.V) };
+            if (node is BtlTable table)
+            {
+                var copy = new BtlTable { T = table.T };
+                foreach (var field in table.F) copy.F.Add(field.Key, Clone(field.Value));
+                return copy;
+            }
+            if (node is BtlStruct structure)
+            {
+                var copy = new BtlStruct { T = structure.T };
+                copy.Layout.AddRange(structure.Layout);
+                copy.V.Capacity = structure.V.Count;
+                foreach (var value in structure.V) copy.V.Add(CloneValue(value));
+                return copy;
+            }
+            if (node is BtlVector vector)
+            {
+                var copy = new BtlVector { T = vector.T, Elem = vector.Elem, Enc = vector.Enc };
+                copy.StructLayout.AddRange(vector.StructLayout);
+                copy.V.Capacity = vector.V.Count;
+                foreach (var value in vector.V) copy.V.Add(CloneValue(value));
+                return copy;
+            }
+            throw new InvalidDataException("未知 Front 节点类型");
+        }
+
+        static object CloneValue(object value) => value switch
+        {
+            BtlNode node => Clone(node),
+            JsonNode json => json.DeepClone(),
+            JsonElement element => element.Clone(),
+            _ => value // Front 标量是不可变的 CLR 数值、布尔和字符串。
+        };
+
+        public static bool ContentEquals(BtlFrontDocument left, BtlFrontDocument right) =>
+            ReferenceEquals(left, right) || left != null && right != null
+            && left.FormatVersion == right.FormatVersion && ValueEquals(left.Root, right.Root);
+
+        static bool ValueEquals(object left, object right)
+        {
+            if (ReferenceEquals(left, right)) return true;
+            if (left == null || right == null) return false;
+            if (left is BtlNode a && right is BtlNode b)
+            {
+                if (a.T != b.T) return false;
+                if (a is BtlScalar sa && b is BtlScalar sb) return ValueEquals(sa.V, sb.V);
+                if (a is BtlTable ta && b is BtlTable tb)
+                {
+                    if (ta.F.Count != tb.F.Count) return false;
+                    foreach (var field in ta.F)
+                        if (!tb.F.TryGetValue(field.Key, out var value) || !ValueEquals(field.Value, value)) return false;
+                    return true;
+                }
+                if (a is BtlStruct sta && b is BtlStruct stb)
+                    return sta.Layout.SequenceEqual(stb.Layout) && ValuesEqual(sta.V, stb.V);
+                if (a is BtlVector va && b is BtlVector vb)
+                    return va.Elem == vb.Elem && va.Enc == vb.Enc
+                        && va.StructLayout.SequenceEqual(vb.StructLayout) && ValuesEqual(va.V, vb.V);
+                return false;
+            }
+            if (left is JsonNode ja && right is JsonNode jb) return JsonNode.DeepEquals(ja, jb);
+            if (left.Equals(right)) return true;
+            // JSON 导入的 long 与写接口的 u16 等数值类型可以不同，但值相同不应增加撤销帧。
+            if (IsNumber(left) && IsNumber(right))
+            {
+                if (left is float or double || right is float or double)
+                    return JsonSerializer.Serialize(left) == JsonSerializer.Serialize(right);
+                return Convert.ToDecimal(left, CultureInfo.InvariantCulture) == Convert.ToDecimal(right, CultureInfo.InvariantCulture);
+            }
+            if (left is JsonElement ea && right is JsonElement eb) return ea.GetRawText() == eb.GetRawText();
+            return false;
+        }
+
+        static bool IsNumber(object value) => value is byte or sbyte or ushort or short or uint or int or ulong or long or float or double or decimal;
+        static bool ValuesEqual(List<object> left, List<object> right)
+        {
+            if (left.Count != right.Count) return false;
+            for (int i = 0; i < left.Count; i++) if (!ValueEquals(left[i], right[i])) return false;
+            return true;
         }
 
         public static BtlFrontDocument CloneDocument(BtlFrontDocument doc)
@@ -196,6 +278,7 @@ namespace BtlCore.Front
                 case "struct":
                     {
                         var st = new BtlStruct { T = "struct" };
+                        ReadLayout(obj["layout"], st.Layout);
                         if (obj["v"] is JsonArray members)
                         {
                             foreach (var m in members)
@@ -211,6 +294,7 @@ namespace BtlCore.Front
                             Elem = obj["elem"]?.GetValue<string>(),
                             Enc = obj["enc"]?.GetValue<string>()
                         };
+                        ReadLayout(obj["layout"], vec.StructLayout);
                         if (obj["v"] is JsonArray items)
                         {
                             bool rawEnc = !string.IsNullOrEmpty(vec.Enc);
@@ -253,7 +337,9 @@ namespace BtlCore.Front
             {
                 var arr = new JsonArray();
                 foreach (var m in st.V) arr.Add(WriteLoose(m));
-                return new JsonObject { ["t"] = "struct", ["v"] = arr };
+                var o = new JsonObject { ["t"] = "struct", ["v"] = arr };
+                WriteLayout(o, st.Layout);
+                return o;
             }
             if (node is BtlVector vec)
             {
@@ -265,9 +351,28 @@ namespace BtlCore.Front
                 }
                 var o = new JsonObject { ["t"] = "vector", ["elem"] = vec.Elem ?? "unknown", ["v"] = arr };
                 if (!string.IsNullOrEmpty(vec.Enc)) o["enc"] = vec.Enc;
+                WriteLayout(o, vec.StructLayout);
                 return o;
             }
             return null;
+        }
+
+        static void ReadLayout(JsonNode node, List<string> dest)
+        {
+            if (node is not JsonArray arr) return;
+            foreach (var item in arr)
+            {
+                string t = item?.GetValue<string>();
+                if (!string.IsNullOrEmpty(t)) dest.Add(t);
+            }
+        }
+
+        static void WriteLayout(JsonObject obj, List<string> layout)
+        {
+            if (layout == null || layout.Count == 0) return;
+            var arr = new JsonArray();
+            foreach (var t in layout) arr.Add((JsonNode)t);
+            obj["layout"] = arr;
         }
 
         static JsonNode WriteLoose(object v)
@@ -324,10 +429,12 @@ namespace BtlCore.Front
             if (val.GetValueKind() == JsonValueKind.Number)
             {
                 if (val.TryGetValue(out long l)) return l;
+                if (val.TryGetValue(out ulong u)) return u;
                 if (val.TryGetValue(out double d)) return d;
                 // JsonValue 里实际装着 byte/sbyte 时，TryGetValue<long> 会失败，ToString 又只是 "5"。
                 string raw = val.ToString();
                 if (long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out long n)) return n;
+                if (ulong.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out ulong un)) return un;
                 if (double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double x)) return x;
             }
             return val.ToString();

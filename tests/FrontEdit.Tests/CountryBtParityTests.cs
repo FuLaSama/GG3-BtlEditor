@@ -8,18 +8,6 @@ namespace BtlCore.Front.Tests;
 
 public class CountryBtParityTests
 {
-    static string CountryLua()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            string path = Path.Combine(dir.FullName, "EditorLayout", "scripts", "country.lua");
-            if (File.Exists(path)) return File.ReadAllText(path);
-            dir = dir.Parent;
-        }
-        throw new FileNotFoundException("EditorLayout/scripts/country.lua");
-    }
-
     static BtlFrontDocument Sample()
     {
         var doc = new BtlFrontDocument { Root = BtlFrontJson.NewTable() };
@@ -32,7 +20,11 @@ public class CountryBtParityTests
     {
         var host = new ScriptHost();
         host.Load(doc);
-        host.Execute(CountryLua(), "country.lua");
+        EditorScripts.Load(host,
+            "country/节点树.lua",
+            "country/节点属性.lua",
+            "country/行为树列表.lua",
+            "country/行为树属性.lua");
         return host;
     }
 

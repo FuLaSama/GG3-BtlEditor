@@ -15,10 +15,11 @@ namespace BtlCore.Scripting
             try
             {
                 LoadRoot(builtinDir, result.Bundle, result.Errors, userOverride: false);
-                if (!string.IsNullOrEmpty(userDir) && File.Exists(Path.Combine(userDir, "layout.xml")))
+                bool hasUserLayout = !string.IsNullOrEmpty(userDir) && File.Exists(Path.Combine(userDir, "layout.xml"));
+                if (hasUserLayout)
                     LoadRoot(userDir, result.Bundle, result.Errors, userOverride: true);
-                else if (!string.IsNullOrEmpty(userDir) && Directory.Exists(userDir))
-                    LoadLooseScripts(userDir, result.Bundle, result.Errors);
+                if (!string.IsNullOrEmpty(userDir) && Directory.Exists(userDir))
+                    LoadLooseScripts(userDir, result.Bundle, result.Errors, includeScripts: !hasUserLayout);
             }
             catch (Exception ex)
             {
@@ -36,7 +37,7 @@ namespace BtlCore.Scripting
             {
                 foreach (var field in section.Fields)
                 {
-                    if (string.IsNullOrEmpty(field.Action)) continue;
+                    if (string.IsNullOrEmpty(field.Action) || field.ReadOnly) continue;
                     bool ok = canRun(field.Action) && (canGet == null || canGet(field.Action));
                     if (!ok)
                     {
@@ -46,7 +47,7 @@ namespace BtlCore.Scripting
                 }
                 foreach (var cmd in section.Commands)
                 {
-                    if (string.IsNullOrEmpty(cmd.Script) || !canRun(cmd.Script))
+                    if (string.IsNullOrEmpty(cmd.Handler) && (string.IsNullOrEmpty(cmd.Script) || !canRun(cmd.Script)))
                     {
                         cmd.Enabled = false;
                         cmd.DisableReason = "找不到操作 " + cmd.Script;
@@ -93,7 +94,7 @@ namespace BtlCore.Scripting
                     continue;
                 }
                 var el = (XmlElement)child;
-                RejectUnknown(el, new[] { "id", "title", "page", "kind" }, file, errors);
+                RejectUnknown(el, new[] { "id", "title", "page", "kind", "placement" }, file, errors);
                 string id = el.GetAttribute("id");
                 if (string.IsNullOrEmpty(id) || !seen.Add(id))
                     errors.Add(file + ": tab id 重复或为空");
@@ -101,7 +102,8 @@ namespace BtlCore.Scripting
                 {
                     Id = id,
                     Title = el.GetAttribute("title"),
-                    Builtin = el.GetAttribute("kind") == "builtin"
+                    Builtin = el.GetAttribute("kind") == "builtin",
+                    Placement = el.GetAttribute("placement")
                 };
                 if (!tab.Builtin)
                 {
@@ -153,26 +155,43 @@ namespace BtlCore.Scripting
 
         static LayoutSection LoadSection(XmlElement el, string path, List<string> errors)
         {
-            RejectUnknown(el, new[] { "title", "kind", "bind" }, path, errors);
+            RejectUnknown(el, new[] { "id", "title", "kind", "bind", "resolve", "text", "filter" }, path, errors);
             var section = new LayoutSection
             {
                 Title = el.GetAttribute("title"),
                 Kind = el.GetAttribute("kind"),
-                Bind = el.GetAttribute("bind")
+                Bind = el.GetAttribute("bind"),
+                Resolve = el.GetAttribute("resolve"),
+                Id = el.GetAttribute("id"),
+                Text = el.GetAttribute("text"),
+                Filter = el.GetAttribute("filter")
             };
-            if (section.Kind != "form" && section.Kind != "list")
+            if (section.Kind != "form" && section.Kind != "list" && section.Kind != "tree" && section.Kind != "palettes" && section.Kind != "label")
                 errors.Add(path + ": 不支持的栏目 " + section.Kind);
             foreach (XmlNode child in el.ChildNodes)
             {
                 if (child.NodeType != XmlNodeType.Element) continue;
                 if (child.LocalName == "field" && section.Kind == "form")
                     section.Fields.Add(LoadField((XmlElement)child, path, errors));
+                else if (child.LocalName == "group")
+                    section.Groups.Add(LoadGroup((XmlElement)child, section, path, errors));
+                else if (child.LocalName == "row")
+                    section.Rows.Add(LoadRow((XmlElement)child, section, path, errors));
                 else if (child.LocalName == "columns")
                     LoadColumns(child, section, path, errors);
                 else if (child.LocalName == "fields")
                     LoadFields(child, section, path, errors);
                 else if (child.LocalName == "actions")
                     LoadCommands(child, section, path, errors);
+                else if (child.LocalName == "palette" && section.Kind == "palettes")
+                {
+                    var palette = (XmlElement)child;
+                    RejectUnknown(palette, new[] { "title", "target" }, path, errors);
+                    string target = palette.GetAttribute("target");
+                    if (target != "Climate" && target != "Main" && target != "Secondary" && target != "Decor")
+                        errors.Add(path + ": 未知贴图目标 " + target);
+                    section.Palettes.Add(new LayoutPalette { Title = palette.GetAttribute("title"), Target = target });
+                }
                 else
                     errors.Add(path + ": 未知元素 " + child.LocalName);
             }
@@ -213,15 +232,67 @@ namespace BtlCore.Scripting
 
         static LayoutField LoadField(XmlElement el, string path, List<string> errors)
         {
-            RejectUnknown(el, new[] { "id", "label", "widget", "type", "action" }, path, errors);
+            RejectUnknown(el, new[] { "id", "label", "widget", "type", "action", "bind", "shift", "width", "lookup", "when", "scope", "default", "min", "max", "readonly" }, path, errors);
             return new LayoutField
             {
                 Id = el.GetAttribute("id"),
                 Label = el.GetAttribute("label"),
                 Widget = string.IsNullOrEmpty(el.GetAttribute("widget")) ? "number" : el.GetAttribute("widget"),
                 Type = el.GetAttribute("type"),
-                Action = el.GetAttribute("action")
+                Action = el.GetAttribute("action"),
+                Bind = el.GetAttribute("bind"),
+                Shift = OptionalInt(el.GetAttribute("shift")),
+                Width = OptionalInt(el.GetAttribute("width")),
+                Lookup = el.GetAttribute("lookup"),
+                When = el.GetAttribute("when"),
+                Scope = el.GetAttribute("scope"),
+                Default = el.GetAttribute("default"),
+                Minimum = OptionalDecimal(el.GetAttribute("min")),
+                Maximum = OptionalDecimal(el.GetAttribute("max")),
+                ReadOnly = el.GetAttribute("readonly") == "true"
             };
+        }
+
+        static LayoutGroup LoadGroup(XmlElement el, LayoutSection section, string path, List<string> errors)
+        {
+            RejectUnknown(el, new[] { "title" }, path, errors);
+            var group = new LayoutGroup { Title = el.GetAttribute("title") };
+            foreach (XmlNode child in el.ChildNodes)
+            {
+                if (child.NodeType != XmlNodeType.Element) continue;
+                if (child.LocalName != "row")
+                {
+                    errors.Add(path + ": 未知元素 " + child.LocalName);
+                    continue;
+                }
+                group.Rows.Add(LoadRow((XmlElement)child, section, path, errors));
+            }
+            return group;
+        }
+
+        static LayoutRow LoadRow(XmlElement el, LayoutSection section, string path, List<string> errors)
+        {
+            RejectUnknown(el, new[] { "label" }, path, errors);
+            var row = new LayoutRow { Label = el.GetAttribute("label") };
+            foreach (XmlNode child in el.ChildNodes)
+            {
+                if (child.NodeType != XmlNodeType.Element) continue;
+                if (child.LocalName != "field")
+                {
+                    errors.Add(path + ": 未知元素 " + child.LocalName);
+                    continue;
+                }
+                var field = LoadField((XmlElement)child, path, errors);
+                row.Fields.Add(field);
+                section.Fields.Add(field);
+            }
+            return row;
+        }
+
+        static int? OptionalInt(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return null;
+            return int.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
         }
 
         static void LoadCommands(XmlNode node, LayoutSection section, string path, List<string> errors)
@@ -236,16 +307,20 @@ namespace BtlCore.Scripting
                     continue;
                 }
                 var el = (XmlElement)child;
-                RejectUnknown(el, new[] { "id", "label", "script", "confirm" }, path, errors);
+                RejectUnknown(el, new[] { "id", "label", "script", "confirm", "handler" }, path, errors);
                 section.Commands.Add(new LayoutCommand
                 {
                     Id = el.GetAttribute("id"),
                     Label = el.GetAttribute("label"),
                     Script = el.GetAttribute("script"),
-                    Confirm = el.GetAttribute("confirm")
+                    Confirm = el.GetAttribute("confirm"),
+                    Handler = el.GetAttribute("handler")
                 });
             }
         }
+
+        static decimal? OptionalDecimal(string text) => string.IsNullOrEmpty(text) ? null
+            : decimal.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
 
         static void LoadScripts(string dir, XmlNode node, LayoutBundle bundle, List<string> errors, string file)
         {
@@ -264,12 +339,17 @@ namespace BtlCore.Scripting
             }
         }
 
-        static void LoadLooseScripts(string dir, LayoutBundle bundle, List<string> errors)
+        static void LoadLooseScripts(string dir, LayoutBundle bundle, List<string> errors, bool includeScripts)
         {
             string scripts = Path.Combine(dir, "scripts");
-            if (!Directory.Exists(scripts)) return;
-            foreach (var file in Directory.GetFiles(scripts, "*.lua").OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+            string tools = Path.Combine(dir, "tools");
+            var files = includeScripts && Directory.Exists(scripts) ? Directory.GetFiles(scripts, "*.lua").AsEnumerable() : Enumerable.Empty<string>();
+            if (Directory.Exists(tools)) files = files.Concat(Directory.GetFiles(tools, "*.lua", SearchOption.AllDirectories));
+            foreach (var file in files.OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+            {
+                if (bundle.Scripts.Any(s => string.Equals(s.Path, file, StringComparison.OrdinalIgnoreCase))) continue;
                 AddScript(dir, Path.GetRelativePath(dir, file), bundle, errors);
+            }
         }
 
         static void AddScript(string dir, string relative, LayoutBundle bundle, List<string> errors)

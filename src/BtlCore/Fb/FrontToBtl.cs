@@ -11,7 +11,7 @@
  *   向量元素倒序 Push
  *
  * 国家行为树：向量 Enc=country_ai_bt 时走 PackedJsonStream，得到的是 u8 向量。
- * struct 布局来自 battle.fbs；没有布局时只好按 u8 堆，并记 Info。
+ * struct 先用节点上的 Layout；没有时再用 battle.fbs；还没有就按 u8 堆，并记 Info。
  * 真正读到的空表 {}（vtable 合法、没有字段）仍要写出去；只有读入时跳过的零填充槽才不会出现在 Front 里。
  */
 using System.Globalization;
@@ -187,7 +187,7 @@ namespace BtlCore.Fb
 
                     if (node is BtlStruct st)
                     {
-                        PutStruct(st, hint?.StructMembers, fp);
+                        PutStruct(st, FromLayout(st.Layout) ?? hint?.StructMembers, fp);
                         _b.Slot(fid);
                         continue;
                     }
@@ -318,7 +318,7 @@ namespace BtlCore.Fb
 
                 if (elem == "struct")
                 {
-                    var members = hint?.VectorStructMembers;
+                    var members = FromLayout(vec.StructLayout) ?? FirstStructLayout(vec) ?? hint?.VectorStructMembers;
                     int stride = members?.Sum(m => m.Size) ?? 0;
                     int align = members != null && members.Length > 0
                         ? members.Max(m => m.Size)
@@ -345,6 +345,26 @@ namespace BtlCore.Fb
                 for (int i = vec.V.Count - 1; i >= 0; i--)
                     PutScalar(elem, vec.V[i], path + "/i" + i);
                 return _b.EndVector();
+            }
+
+            static StructMember[] FromLayout(IList<string> layout)
+            {
+                if (layout == null || layout.Count == 0) return null;
+                var arr = new StructMember[layout.Count];
+                for (int i = 0; i < layout.Count; i++)
+                    arr[i] = new StructMember { T = layout[i] };
+                return arr;
+            }
+
+            static StructMember[] FirstStructLayout(BtlVector vec)
+            {
+                if (vec?.V == null) return null;
+                foreach (var item in vec.V)
+                {
+                    if (item is BtlStruct st && st.Layout.Count > 0)
+                        return FromLayout(st.Layout);
+                }
+                return null;
             }
 
             void PutStruct(BtlStruct st, StructMember[] members, string path)

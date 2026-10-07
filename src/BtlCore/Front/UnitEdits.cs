@@ -2,7 +2,7 @@
  * UnitEdits.cs
  *
  * 画布投影：按 cell_idx 把部队摊到格子上，保存前再写回 agents。
- * 改属性、放置和删除在 scripts/unit.lua。
+ * 改属性、放置和删除在 scripts/unit/。
  * 场上部队按 cell_idx 对上格子；cell_idx 落在地图外的留在向量里。
  */
 using System.Globalization;

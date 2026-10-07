@@ -83,7 +83,7 @@ table MapTerrain {
   val1:ubyte (id: 1); // 不知道
   tiles:[ushort] (id: 2); // 地块基本属性
   attributes:[TileAttr] (id: 3); // 地块地形
-  val2:bool (id: 4); // 不知道
+  val2:bool (id: 4); // 战争迷雾
 }
 
 table StageTarget {

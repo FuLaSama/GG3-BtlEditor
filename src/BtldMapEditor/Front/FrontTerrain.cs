@@ -19,7 +19,8 @@ namespace BtldMapEditor.Front
             decoded.Width = width;
             decoded.Height = height;
             var size = FrontNav.MapSize(doc);
-            decoded.PlayableFlag = (byte)FrontNav.ScalarI64(FrontNav.Map(doc), 1, 1);
+            // 地图字段 1 是默认地质。FlatBuffers 缺槽就是 0（土地）。当成 1 时，土地会在交界处把底图盖到邻格上。
+            decoded.PlayableFlag = (byte)FrontNav.ScalarI64(FrontNav.Map(doc), 1, 0);
 
             int left = (int)FrontNav.MemberU16(size, 2);
             int top = (int)FrontNav.MemberU16(size, 3);
