@@ -1,6 +1,6 @@
--- 增援部署点：具名属性，未填写的非布尔字段删槽。
+-- 增援部署点：包括布尔值在内，未填写字段删槽，显式 false 保留槽位。
 local function write(point,input)
-  point.cell=input.cell; point.faction=input.faction; point.is_key=input.is_key or false; point.flag=input.flag
+  point.cell=input.cell; point.faction=input.faction; point.is_key=input.is_key; point.flag=input.flag
 end
 editor.action("add_reinforce",function(ctx) write(game.reinforcements.create(),ctx.input) end)
 editor.action("update_reinforce",function(ctx)

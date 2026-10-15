@@ -26,10 +26,10 @@ dotnet build BtldMapEditor.sln -c Release
 | `src/BtlCore` | `.btl` 读写与 JSON 导入导出 |
 | `src/BtlVerifier` | 独立校验 / 反编译 GUI |
 | `schema/battle.fbs` | 关卡字段定义 |
-| `EditorLayout/操作手册.md` | 统一操作手册、完整接口参考、工具示例与 AI 编写规范 |
-| `EditorLayout/脚本编写.md` | 用 Lua 和布局 XML 自己写修改 |
-| `EditorLayout/写个小工具.md` | Lua 工具入门、具名对象和参数声明 |
-| `EditorLayout/对象接口迁移与试验.md` | 现有脚本迁移、对象集合和样例关卡验证 |
+| `EditorLayout/脚本编写.md` | Lua 开发手册：工具、对象、格式扩展、XML、事务与排错 |
+| `EditorLayout/对象扩展.md` | 对象工厂、集合、配置辅助方法与模块迁移 |
+| `EditorLayout/格式扩展.md` | 字段类型声明、载荷编解码与二进制接口 |
+| `EditorLayout/fields/README.md` | 公共字段映射、位段、研究依据与版本记录 |
 | `tests/Smoke` | 往返自检 |
 | `tools/Dump` | 命令行：`.btl` → 带字段名的 JSON |
 

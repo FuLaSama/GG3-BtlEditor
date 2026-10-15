@@ -14,16 +14,11 @@ namespace BtldMapEditor
         FrontSession _front;
         string _loadedFilePath;
         int _selectedCellIdx = -1;
-        readonly List<BtlFrontDocument> _history = new();
-        readonly List<long> _historySizes = new();
-        long _historyBytes;
-        const long HistoryBudget = 128L * 1024 * 1024;
         bool _openingFile;
         List<MapCell> _preparedCells;
         BtlFrontDocument _preparedHistory;
         long _preparedHistoryBytes;
-        int _historyIndex = -1;
-        bool _isUndoRedoAction, _isInitialLoading;
+        bool _isUndoRedoAction;
         readonly bool _strictLayout;
         MenuStrip menuStrip;
         ToolStripMenuItem fileMenu, newMapItem, openItem, exportItem, exitItem;
@@ -202,7 +197,13 @@ namespace BtldMapEditor
                 mapCanvas.Focus();
             };
 
-            CheckBox chkShowCoords = new CheckBox { Text = "显示地块坐标", AutoSize = true, Checked = true, Margin = new Padding(0, 4, 15, 0) };
+            CheckBox chkShowIds = new CheckBox { Name = "show_cell_ids", Text = "显示地块ID", AutoSize = true, Checked = true, Margin = new Padding(0, 4, 15, 0) };
+            chkShowIds.CheckedChanged += (s, e) =>
+            {
+                if (mapCanvas != null) mapCanvas.ShowCellIds = chkShowIds.Checked;
+            };
+
+            CheckBox chkShowCoords = new CheckBox { Text = "显示地块坐标", AutoSize = true, Checked = false, Margin = new Padding(0, 4, 15, 0) };
 
             chkShowCoords.CheckedChanged += (s, e) =>
 
@@ -218,7 +219,7 @@ namespace BtldMapEditor
 
             };
 
-            CheckBox chkShowOffsets = new CheckBox { Text = "显示贴图偏移", AutoSize = true, Checked = true, Margin = new Padding(0, 4, 15, 0) };
+            CheckBox chkShowOffsets = new CheckBox { Text = "显示贴图偏移", AutoSize = true, Checked = false, Margin = new Padding(0, 4, 15, 0) };
 
             chkShowOffsets.CheckedChanged += (s, e) =>
 
@@ -259,6 +260,7 @@ namespace BtldMapEditor
             pnlToolbar.Controls.Add(lblVisualStyle);
             pnlToolbar.Controls.Add(cbVisualStyle);
 
+            pnlToolbar.Controls.Add(chkShowIds);
             pnlToolbar.Controls.Add(chkShowCoords);
 
             pnlToolbar.Controls.Add(chkShowOffsets);
@@ -288,12 +290,10 @@ namespace BtldMapEditor
             mapCanvas.DragOver += MapCanvasPaletteDragOver;
             mapCanvas.DragDrop += MapCanvasPaletteDragDrop;
             mapCanvas.DragLeave += (s, e) => { mapCanvas.DropPreviewIndex = -1; };
-            mapCanvas.MouseUp += (s, e) => {
-                if (mapCanvas.BrushMode)
-                {
-                    AddHistoryState();
-                }
-            };
+            mapCanvas.EditGestureStarted += BeginMapGesture;
+            mapCanvas.EditGestureEnded += EndMapGesture;
+            Deactivate += (_, _) => EndMapGesture();
+            FormClosed += (_, _) => EndMapGesture();
 
             pnlLeft.Controls.Add(mapCanvas);
 
@@ -315,7 +315,7 @@ namespace BtldMapEditor
             };
             tabJsonMode.Controls.Add(txtJsonEditor);
 
-            // Tab 2: 注册表模式（直接钻探 BtlFront Document，不经 AST / .btl）
+            // Tab 2: 原始字节解释与工作文档分别查看。
             TabPage tabFbRegistryMode = new TabPage("注册表模式");
             tabFbRegistryMode.Padding = new Padding(2);
             fbRegistryViewer = new FrontRegistryViewer { Dock = DockStyle.Fill };
@@ -326,14 +326,12 @@ namespace BtldMapEditor
                 _suppressRegistryHistory = true;
                 try
                 {
-                    _front.ReplaceDocument(_front.Document);
                     OnDocumentLoaded();
                 }
                 finally
                 {
                     _suppressRegistryHistory = false;
                 }
-                AddHistoryState();
             };
             fbRegistryViewer.UndoRequested += () => PerformUndoAction();
             fbRegistryViewer.RedoRequested += () => PerformRedoAction();
@@ -348,7 +346,7 @@ namespace BtldMapEditor
                 SuspendDrawing(this);
             };
 
-            // 左侧 Tab：地图 ↔ 注册表 双向同步（Document 为真相源）
+            // 左侧 Tab 只切换文档投影；修改在各自操作入口提交。
             tabControlLeft.SelectedIndexChanged += (s, e) =>
             {
                 try
@@ -367,13 +365,12 @@ namespace BtldMapEditor
                         }
                     }
 
-                    // 2. 切入注册表：先把地图改动 Merge 进 Document，再绑树
+                    // 2. 切入查看不触发 SyncGrid；原文件视图独立于地图投影和历史。
                     if (tabControlLeft.SelectedTab == tabFbRegistryMode)
                     {
                         splitMain.Panel2Collapsed = true;
-                        FrontNav.SyncGrid(Doc, mapCanvas.Cells);
                         if (_front?.Document != null)
-                            fbRegistryViewer.LoadDocument(_front.Document, collapseAll: true);
+                            fbRegistryViewer.LoadSession(_front, collapseAll: false);
                         _registryEdited = false;
                     }
                     else
@@ -417,6 +414,7 @@ namespace BtldMapEditor
 
         async Task OpenPath(string path)
         {
+            EndMapGesture();
             if (_openingFile) return;
             _openingFile = true;
             try
@@ -425,14 +423,15 @@ namespace BtldMapEditor
                 menuStrip.Enabled = false;
                 splitMain.Enabled = false;
                 statusLabel.Text = "正在读取关卡并准备地图：" + Path.GetFileName(path);
+                var context = _stageHost?.CreateSchemaContext() ?? SoftSchema.DefaultContext;
                 var loaded = await Task.Run(() =>
                 {
-                    var session = IsBtlFile(path) ? FrontSession.FromBtl(path)
-                        : IsJsonFile(path) ? FrontSession.FromJsonFile(path)
+                    var session = IsBtlFile(path) ? FrontSession.FromBtl(path, context)
+                        : IsJsonFile(path) ? FrontSession.FromJsonFile(path, context)
                         : throw new InvalidDataException("无法识别后缀。请使用 .btl 或 .json");
-                    var cells = FrontNav.RebuildCells(session.Document);
+                    var cells = session.CanExport ? FrontNav.RebuildCells(session.Document) : new List<MapCell>();
                     long allocated = GC.GetAllocatedBytesForCurrentThread();
-                    var history = BtlFrontJson.CloneDocument(session.Document);
+                    var history = session.CanExport ? BtlFrontJson.CloneDocument(session.Document) : null;
                     return (Session: session, Cells: cells, History: history,
                         HistoryBytes: GC.GetAllocatedBytesForCurrentThread() - allocated);
                 });
@@ -443,17 +442,13 @@ namespace BtldMapEditor
                 _preparedHistoryBytes = loaded.HistoryBytes;
 
                 _loadedFilePath = path;
-                statusLabel.Text = $"已打开 ({_front.OpenedKind}): {Path.GetFileName(path)}";
-                _isInitialLoading = true;
-                try
-                {
-                    OnDocumentLoaded();
-                    InitHistory();
-                }
-                finally
-                {
-                    _isInitialLoading = false;
-                }
+                statusLabel.Text = $"已打开 ({_front.OpenedKind}): {Path.GetFileName(path)}" +
+                    (_front.CanExport ? "" : $" · 只读：存在未解析数据（诊断 {_front.Issues.Count} 条）");
+                OnDocumentLoaded();
+                InitHistory();
+                if (!_front.CanExport)
+                    foreach (TabPage page in tabControlLeft.TabPages)
+                        if (page.Text == "注册表模式") tabControlLeft.SelectedTab = page;
             }
             catch (Exception ex)
             {
@@ -486,23 +481,25 @@ namespace BtldMapEditor
 
         void ApplyBtlFile(string path)
         {
-            _front = FrontSession.FromBtl(path);
+            EndMapGesture();
+            _front = FrontSession.FromBtl(path, _stageHost?.CreateSchemaContext());
         }
 
         void ApplyJsonFile(string path)
         {
-            _front = FrontSession.FromJsonFile(path);
+            EndMapGesture();
+            _front = FrontSession.FromJsonFile(path, _stageHost?.CreateSchemaContext());
         }
 
         void ApplyFrontJson(string json)
         {
-            _front = FrontSession.FromJson(json);
+            EndMapGesture();
+            _front = FrontSession.FromJson(json, _stageHost?.CreateSchemaContext());
         }
 
         string SnapshotFrontJson()
         {
             if (!HasDoc) return null;
-            FrontNav.SyncGrid(Doc, mapCanvas.Cells);
             return _front.ToJson();
         }
 
@@ -510,16 +507,18 @@ namespace BtldMapEditor
         {
             if (!HasDoc)
                 throw new InvalidOperationException("没有可导出的关卡数据");
-            FrontNav.SyncGrid(Doc, mapCanvas.Cells);
+            _front.EnsureCanExport();
             _front.SaveBtl(path);
         }
 
         private void UpdateSaveButtonState()
         {
             if (exportItem != null)
-                exportItem.Enabled = HasDoc;
+                exportItem.Enabled = HasDoc && (_front?.CanExport ?? false);
             if (_toolsMenu != null)
-                foreach (ToolStripItem item in _toolsMenu.DropDownItems) item.Enabled = HasDoc && item.Tag is ScriptTool;
+                foreach (ToolStripItem item in _toolsMenu.DropDownItems) item.Enabled = HasDoc && (_front?.CanExport ?? false) && item.Tag is ScriptTool;
+            if (mapCanvas != null) mapCanvas.Enabled = _front?.CanExport ?? true;
+            if (tabControlRight != null) tabControlRight.Enabled = _front?.CanExport ?? true;
         }
 
         void RefreshRegistryViewIfVisible()
@@ -527,117 +526,62 @@ namespace BtldMapEditor
             if (fbRegistryViewer == null || _front?.Document == null) return;
             // 注册表内联编辑触发的 Reproject：树已就地更新，不要整树重建
             if (_suppressRegistryHistory) return;
-            if (tabControlLeft?.SelectedTab?.Text != "注册表模式")
-            {
-                fbRegistryViewer.NotifyExternalDataChanged();
-                return;
-            }
-            fbRegistryViewer.LoadDocument(_front.Document, collapseAll: false);
+            fbRegistryViewer.NotifyExternalDataChanged();
+            if (tabControlLeft?.SelectedTab?.Text != "注册表模式") return;
+            fbRegistryViewer.LoadSession(_front, collapseAll: false);
         }
 
         private void InitHistory()
         {
-            _history.Clear();
-            _historySizes.Clear();
-            _historyBytes = 0;
-            if (HasDoc)
-            {
-                StoreHistory(_preparedHistory);
-                _preparedHistory = null;
-            }
-            _historyIndex = 0;
+            if (HasDoc) _front.Editing.ResetHistory(_preparedHistory, _preparedHistoryBytes);
+            _preparedHistory = null;
         }
 
-        private void AddHistoryState()
+        IDisposable _mapGesture;
+
+        void BeginMapGesture()
+        {
+            if (!HasDoc || !_front.CanExport) return;
+            _mapGesture?.Dispose();
+            _terrainOffsetDragging = false;
+            _mapGesture = _front.Editing.BeginHistoryGroup();
+        }
+
+        void EndMapGesture()
+        {
+            _terrainOffsetDragging = false;
+            var gesture = _mapGesture;
+            _mapGesture = null;
+            gesture?.Dispose();
+            if (gesture != null) mapCanvas.StopPainting();
+        }
+
+        void RestoreHistory(bool redo)
         {
             if (!HasDoc) return;
-            mapCanvas.NotifyContentChanged();
-            FrontNav.SyncGrid(Doc, mapCanvas.Cells);
-
-            // Prevent duplicate adjacent states
-            if (_historyIndex >= 0 && _historyIndex < _history.Count && BtlFrontJson.ContentEquals(_history[_historyIndex], Doc))
-            {
-                return;
-            }
-
-            // Remove any redo states
-            if (_historyIndex < _history.Count - 1)
-            {
-                for (int i = _historyIndex + 1; i < _historySizes.Count; i++) _historyBytes -= _historySizes[i];
-                _historySizes.RemoveRange(_historyIndex + 1, _historySizes.Count - _historyIndex - 1);
-                _history.RemoveRange(_historyIndex + 1, _history.Count - (_historyIndex + 1));
-            }
-
-            StoreHistory();
-            _historyIndex = _history.Count - 1;
-
-            // 同时限制步骤与快照分配量，至少保留当前和上一帧。
-            while (_history.Count > 100 || _history.Count > 2 && _historyBytes > HistoryBudget)
-            {
-                _historyBytes -= _historySizes[0];
-                _historySizes.RemoveAt(0);
-                _history.RemoveAt(0);
-                _historyIndex--;
-            }
-        }
-
-        void StoreHistory(BtlFrontDocument prepared = null)
-        {
-            long start = GC.GetAllocatedBytesForCurrentThread();
-            var snapshot = prepared ?? BtlFrontJson.CloneDocument(Doc);
-            long bytes = prepared != null ? _preparedHistoryBytes : GC.GetAllocatedBytesForCurrentThread() - start;
-            _history.Add(snapshot);
-            _historySizes.Add(bytes);
-            _historyBytes += bytes;
-        }
-
-        private void LoadHistoryState(BtlFrontDocument snapshot)
-        {
+            EndMapGesture();
+            _isUndoRedoAction = true;
             try
             {
-                _isUndoRedoAction = true;
-
-                _front = FrontSession.FromDocument(BtlFrontJson.CloneDocument(snapshot));
+                bool changed = redo ? _front.Editing.Redo() : _front.Editing.Undo();
+                if (!changed) { statusLabel.Text = redo ? "已到达历史记录最后" : "已到达历史记录最前"; return; }
                 OnDocumentLoaded();
+                statusLabel.Text = $"{(redo ? "重做" : "撤销")}成功：步骤 {_front.Editing.HistoryIndex + 1}/{_front.Editing.HistoryCount}";
             }
-            finally
-            {
-                _isUndoRedoAction = false;
-
-            }
+            finally { _isUndoRedoAction = false; }
         }
 
-        private void PerformUndoAction()
-        {
-            if (!HasDoc) return;
-            if (_historyIndex <= 0)
-            {
-                statusLabel.Text = "撤销失败：已到达历史记录最前";
-                return;
-            }
-
-            _historyIndex--;
-            LoadHistoryState(_history[_historyIndex]);
-            statusLabel.Text = $"撤销成功：已回退到步骤 {_historyIndex + 1}/{_history.Count}";
-        }
-
-        private void PerformRedoAction()
-        {
-            if (!HasDoc) return;
-            if (_historyIndex >= _history.Count - 1)
-            {
-                statusLabel.Text = "重做失败：已到达历史记录最后";
-                return;
-            }
-
-            _historyIndex++;
-            LoadHistoryState(_history[_historyIndex]);
-            statusLabel.Text = $"重做成功：已前进到步骤 {_historyIndex + 1}/{_history.Count}";
-        }
+        private void PerformUndoAction() => RestoreHistory(false);
+        private void PerformRedoAction() => RestoreHistory(true);
 
         private void ExportAsClick(object sender, EventArgs e)
         {
             if (!HasDoc) return;
+            if (!_front.CanExport)
+            {
+                MessageBox.Show("原文件存在未解析数据，不能安全重建导出。请查看注册表中的原始字节和诊断。", "导出已阻止", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
 
             using (var sfd = new SaveFileDialog
             {
@@ -655,7 +599,6 @@ namespace BtldMapEditor
                 try
                 {
                     Cursor = Cursors.WaitCursor;
-                    FrontNav.SyncGrid(Doc, mapCanvas.Cells);
 
                     string outPath = sfd.FileName;
                     int fmt = sfd.FilterIndex;
@@ -704,43 +647,13 @@ namespace BtldMapEditor
             return "stage";
         }
 
-        string ResolveFbsPath(string exportPath)
-        {
-            var dirs = new List<string>();
-            if (!string.IsNullOrEmpty(_loadedFilePath))
-                dirs.Add(Path.GetDirectoryName(_loadedFilePath));
-            if (!string.IsNullOrEmpty(exportPath))
-                dirs.Add(Path.GetDirectoryName(exportPath));
-            dirs.Add(Directory.GetCurrentDirectory());
-            dirs.Add(AppDomain.CurrentDomain.BaseDirectory);
-
-            foreach (string dir in dirs.Where(d => !string.IsNullOrEmpty(d)).Distinct(StringComparer.OrdinalIgnoreCase))
-            {
-                string found = BtlCore.Fb.FbsSchema.FindInDirectory(dir);
-                if (found != null) return found;
-            }
-
-            using (var ofd = new OpenFileDialog
-            {
-                Title = "选择用于字段名的 .fbs（例如 battle.fbs）",
-                Filter = "FlatBuffers Schema (*.fbs)|*.fbs|所有文件 (*.*)|*.*"
-            })
-            {
-                if (ofd.ShowDialog(this) == DialogResult.OK)
-                    return ofd.FileName;
-            }
-
-            throw new FileNotFoundException(
-                "未找到 .fbs。请把 battle.fbs 放在关卡同目录，或在弹出对话框中选择。");
-        }
-
         void ExportStageJson(string path, bool rawFieldIds)
         {
             if (_front == null)
                 throw new InvalidOperationException("没有可导出的关卡数据");
-            FrontNav.SyncGrid(Doc, mapCanvas.Cells);
-            string fbsPath = ResolveFbsPath(path);
-            var schema = BtlCore.Fb.FbsSchema.LoadFile(fbsPath);
+            _front.EnsureCanExport();
+            var schema = Doc.Context.Schema ?? throw new InvalidDataException("当前文档没有可用于 JSON 导出的 schema。");
+            string fbsPath = schema.SourcePath;
             string json = rawFieldIds
                 ? BtlCore.Fb.StageJson.ToFieldIds(Doc, schema)
                 : BtlCore.Fb.StageJson.ToNamed(Doc, schema);
@@ -777,7 +690,6 @@ namespace BtldMapEditor
 
             try
             {
-                FrontNav.SyncGrid(Doc, mapCanvas.Cells);
 
                 txtJsonEditor.Text = _front.ToJson();
             }
@@ -834,6 +746,14 @@ namespace BtldMapEditor
 
         {
             if (_openingFile) return base.ProcessCmdKey(ref msg, keyData);
+            if (tabControlLeft?.SelectedTab?.Text == "注册表模式" && !fbRegistryViewer.CanEdit
+                && !IsEditingText() && keyData is not Keys.Back)
+            {
+                if (keyData == Keys.Delete || keyData == (Keys.Control | Keys.Z) || keyData == (Keys.Control | Keys.Y)
+                    || keyData == (Keys.Control | Keys.Shift | Keys.Z) || keyData == (Keys.Control | Keys.V)
+                    || keyData == Keys.B || keyData == Keys.V || keyData == Keys.O) return true;
+                if (keyData == (Keys.Control | Keys.C)) return base.ProcessCmdKey(ref msg, keyData);
+            }
 
             if (keyData == Keys.B)
 
@@ -1011,29 +931,13 @@ namespace BtldMapEditor
 
         private void CreateNewMap(ushort w, ushort h, ushort lm, ushort tm, ushort pw, ushort ph, ushort stageNum, ushort version, short tag)
         {
-            _front = FrontSession.NewMap(w, h, lm, tm, pw, ph, stageNum, version);
+            EndMapGesture();
+            _front = FrontSession.NewMap(w, h, lm, tm, pw, ph, stageNum, version, _stageHost?.CreateSchemaContext());
 
             _loadedFilePath = ""; // Clean loaded path for new file!
 
-            _isInitialLoading = true;
-
-            try
-
-            {
-
-                OnDocumentLoaded();
-
-                InitHistory();
-
-            }
-
-            finally
-
-            {
-
-                _isInitialLoading = false;
-
-            }
+            OnDocumentLoaded();
+            InitHistory();
 
             statusLabel.Text = "新建地图成功（内存中）";
 
@@ -1048,12 +952,18 @@ namespace BtldMapEditor
         void OnDocumentLoaded()
         {
             UpdateSaveButtonState();
+            if (_front?.CanExport == false)
+            {
+                mapCanvas.LoadPreparedDocument(Doc, _preparedCells ?? new List<MapCell>());
+                _selectedCellIdx = -1;
+                RefreshRegistryViewIfVisible();
+                return;
+            }
             if (_isUndoRedoAction) mapCanvas.ApplyDocumentFromHistory(Doc);
             else if (_preparedCells != null) mapCanvas.LoadPreparedDocument(Doc, _preparedCells);
             else mapCanvas.Document = Doc;
             _selectedCellIdx = -1;
             RefreshEditorPages();
-            if (!_isUndoRedoAction && !_isInitialLoading && !_suppressRegistryHistory) AddHistoryState();
             RefreshRegistryViewIfVisible();
         }
 
@@ -1062,7 +972,6 @@ namespace BtldMapEditor
             if (cellIdx < 0 || cellIdx >= mapCanvas.Cells.Count) return;
             _selectedCellIdx = cellIdx;
             RefreshActiveEditorPage();
-            RefreshSelectedTerrainUi();
             var cell = mapCanvas.Cells[cellIdx];
             statusLabel.Text = $"cellIdx: {cellIdx} (X: {cell.X}, Y: {cell.Y})";
         }

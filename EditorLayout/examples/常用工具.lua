@@ -1,4 +1,4 @@
--- 每个声明都会自动出现在「脚本工具」菜单，不需要改 XML。
+-- 工具编写示例：默认布局不加载此文件，因此不会出现在菜单中。
 editor.tool {
   id="heal_selected", title="恢复生命", target="selected_unit",
   description="恢复到该部队的最大生命，保留兵种、经验、将领等其他设置。",

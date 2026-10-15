@@ -1,20 +1,10 @@
 /*
  * FrontRegistryViewer.cs
  *
- * 仿 Windows 注册表的 BtlFront 钻探视图：左边树、右边字段列表。
- * 直接绑 Document 的 BtlNode，不读二进制、不做反汇编。
- *
- * 节点种类来自 Front 自己的 t/elem（table / vector / struct / u16…），不靠 fbs 也能显示。
- * 字段名（map_terrain、Faction…）要等用户点「加载 .fbs」之后才套上，而且只显示行尾中文注释。
- * 读 BTL 用的 SoftSchema 仍会自己找 battle.fbs，和这边的显示开关无关。
- * 操作尽量跟 regedit 一样：左边单击只选中并刷新右侧，双击或 +/- 才展开；
- * 右边双击/回车：能进的项（table/vector/struct）就进入，标量则弹出修改；Backspace 回上一级。
- * 右键增删尾部字段/向量元素。改值都进 FrontEdit，触发 DataChanged 后主窗体应 RebuildCells。
- *
- * 缺省槽（vtable 未写出）和写出的 0 不是一回事：
- *   标量 / bool 缺省 → 类型仍是 u16/bool，内容显示 0/false（灰字 = 未写出，游戏读取为默认 0）
- *   表 / 向量 / 字符串缺省 → 才是真正的 NULL
- *   Front 里已经存在的 0 用正常颜色显示，不要再标成 null。
+ * 注册表容器：原始文件由 BinaryRegistryView 只读解释；本文件负责当前工作文档的钻探和显式编辑。
+ * 外部 schema 重解析只作用于保留的原始字节；名称导入不改变工作文档的类型。
+ * 当前文档不声称保留物理槽状态，文件来源与错误请在原始文件视图核对。
+ * 默认只读，只有用户启用“允许编辑当前文档”且会话可安全导出时才能写入。
  */
 using System.Globalization;
 using BtlCore.Fb;
@@ -22,8 +12,9 @@ using BtlCore.Front;
 
 namespace BtldMapEditor.Front
 {
-    public class FrontRegistryViewer : UserControl
+    public partial class FrontRegistryViewer : UserControl
     {
+        const int CurrentPreviewLimit = 4096;
         TextBox _addressBar;
         Button _btnLoadFbs;
         Label _lblFbsStatus;
@@ -44,7 +35,7 @@ namespace BtldMapEditor.Front
         ListViewItem _editingItem;
         bool _committing;
 
-        /// <summary>当前绑定的 BtlFront 文档（就地修改）。</summary>
+        /// <summary>当前绑定的工作文档。写入需通过 CanEdit 检查。</summary>
         public BtlFrontDocument Document => _doc;
 
         public event EventHandler DataChanged;
@@ -152,6 +143,7 @@ namespace BtldMapEditor.Front
 
             Controls.Add(_split);
             Controls.Add(top);
+            InitInspectionControls(top);
         }
 
         static void TryDoubleBuffer(Control c)
@@ -176,12 +168,14 @@ namespace BtldMapEditor.Front
         {
             if (keyData == (Keys.Control | Keys.Z))
             {
+                if (!CanEdit) return true;
                 CommitInlineEdit();
                 UndoRequested?.Invoke();
                 return true;
             }
             if (keyData == (Keys.Control | Keys.Y) || keyData == (Keys.Control | Keys.Shift | Keys.Z))
             {
+                if (!CanEdit) return true;
                 CommitInlineEdit();
                 RedoRequested?.Invoke();
                 return true;
@@ -190,12 +184,19 @@ namespace BtldMapEditor.Front
             {
                 if (_inlineEdit != null && _inlineEdit.Visible) return false;
                 if (_addressBar != null && _addressBar.Focused) return false;
+                if (IsOriginalView)
+                {
+                    string path = _binaryView.SelectedPath;
+                    int slash = path.LastIndexOf('/');
+                    return _binaryView.NavigateToPath(slash <= 0 ? "/" : path[..slash]);
+                }
                 return GoParentKey();
             }
             if (keyData == Keys.Delete)
             {
                 if (_inlineEdit != null && _inlineEdit.Visible) return false;
                 if (_addressBar != null && _addressBar.Focused) return false;
+                if (!CanEdit) return true;
                 return TryDeleteSelectedListItem();
             }
             return base.ProcessCmdKey(ref msg, keyData);
@@ -310,12 +311,8 @@ namespace BtldMapEditor.Front
         {
             if (string.IsNullOrWhiteSpace(path)) return false;
             path = NormalizePath(path);
-            var node = FindByPath(_tree.Nodes, path);
-            if (node == null)
-            {
-                // 路径对应节点可能尚未展开构建：从 Root 按段展开
-                node = EnsurePathBuilt(path);
-            }
+            if (IsOriginalView) return _binaryView.NavigateToPath(path);
+            var node = EnsurePathBuilt(path);
             if (node == null) return false;
 
             _tree.SelectedNode = node;
@@ -326,6 +323,7 @@ namespace BtldMapEditor.Front
 
         public void CommitInlineEdit()
         {
+            if (!CanEdit) { _inlineEdit.Visible = false; _editingItem = null; return; }
             if (_committing || _editingItem == null || !_inlineEdit.Visible) return;
             _committing = true;
             try
@@ -404,7 +402,7 @@ namespace BtldMapEditor.Front
                     if (!IsNavigableNode(kv.Value)) continue;
                     string childPath = JoinPath(parentPath, IdLabel(kv.Key));
                     string childSchema = ResolveChildSchemaType(parentSchemaType, kv.Key, kv.Value);
-                    string title = FieldDisplayName(parentSchemaType, kv.Key);
+                    string title = FieldDisplayName(parentSchemaType, kv.Key, parentPath);
                     var child = MakeTreeNode(title, childPath, kv.Value, isFolder: true, childSchema);
                     if (HasNavigableChildren(kv.Value))
                         child.Nodes.Add(new TreeNode("…"));
@@ -415,7 +413,7 @@ namespace BtldMapEditor.Front
             {
                 // parentSchemaType 对向量节点表示元素类型（如 AIAgent）
                 string elemSchema = parentSchemaType ?? "";
-                for (int i = 0; i < vec.V.Count; i++)
+                for (int i = 0; i < Math.Min(vec.V.Count, CurrentPreviewLimit); i++)
                 {
                     object item = vec.V[i];
                     if (!IsNavigableLoose(item)) continue;
@@ -426,6 +424,8 @@ namespace BtldMapEditor.Front
                         child.Nodes.Add(new TreeNode("…"));
                     parent.Nodes.Add(child);
                 }
+                if (vec.V.Count > CurrentPreviewLimit)
+                    parent.Nodes.Add(new TreeNode("更多对象可通过地址栏进入；原始文件列表支持全部元素"));
             }
             else if (target is BtlStruct st)
             {
@@ -435,7 +435,7 @@ namespace BtldMapEditor.Front
                     object m = st.V[i];
                     if (!IsNavigableLoose(m)) continue;
                     string childPath = JoinPath(parentPath, IdLabel(i));
-                    string title = StructMemberDisplayName(parentSchemaType, i);
+                    string title = StructMemberDisplayName(parentSchemaType, i, parentPath);
                     string childSchema = ResolveStructMemberChildType(parentSchemaType, i);
                     var child = MakeTreeNode(title, childPath, m, isFolder: true, childSchema);
                     if (HasNavigableChildren(m))
@@ -503,22 +503,23 @@ namespace BtldMapEditor.Front
             if (tag.Target is BtlTable tbl)
             {
                 int maxId = VisibleTableMaxFieldId(tbl, schemaType);
-                for (int id = 0; id <= maxId; id++)
+                for (int id = 0; id <= Math.Min(maxId, CurrentPreviewLimit - 1); id++)
                 {
                     string path = JoinPath(tag.Path, IdLabel(id));
-                    string name = FieldDisplayName(schemaType, id);
+                    string name = FieldDisplayName(schemaType, id, tag.Path);
                     if (tbl.F.TryGetValue(id, out BtlNode node) && node != null)
                         AddFieldRow(id, name, node, path, tbl, id, schemaType);
                     else
                         AddAbsentFieldRow(id, name, path, tbl, schemaType);
                 }
+                if (maxId >= CurrentPreviewLimit) AddPreviewNotice();
             }
             else if (tag.Target is BtlVector vec)
             {
                 string elem = vec.Elem ?? "?";
                 if (!string.IsNullOrEmpty(vec.Enc))
                     elem += " enc=" + vec.Enc;
-                for (int i = 0; i < vec.V.Count; i++)
+                for (int i = 0; i < Math.Min(vec.V.Count, CurrentPreviewLimit); i++)
                 {
                     object item = vec.V[i];
                     string path = JoinPath(tag.Path, "i" + IdLabel(i));
@@ -528,6 +529,7 @@ namespace BtldMapEditor.Front
                     else
                         AddLooseScalarRow(i, name, elem, item, path, vec, i, schemaType);
                 }
+                if (vec.V.Count > CurrentPreviewLimit) AddPreviewNotice();
             }
             else if (tag.Target is BtlStruct st)
             {
@@ -535,14 +537,19 @@ namespace BtldMapEditor.Front
                 {
                     object m = st.V[i];
                     string path = JoinPath(tag.Path, IdLabel(i));
-                    string name = StructMemberDisplayName(schemaType, i);
+                    string name = StructMemberDisplayName(schemaType, i, tag.Path);
                     if (m is BtlNode bn)
                         AddFieldRow(i, name, bn, path, st, i, schemaType);
                     else
-                        AddLooseScalarRow(i, name, GuessLooseType(m), m, path, st, i, schemaType);
+                        AddLooseScalarRow(i, name, i < st.Layout.Count ? st.Layout[i] : GuessLooseType(m), m, path, st, i, schemaType);
                 }
             }
         }
+
+        void AddPreviewNotice() => _list.Items.Add(new ListViewItem(new[]
+        {
+            "…", $"当前文档只预览前 {CurrentPreviewLimit} 项", "预览限制", "原始文件视图的虚拟列表可查看全部元素"
+        }));
 
         void AddFieldRow(int index, string name, BtlNode node, string path, object container, int key, string schemaType)
         {
@@ -736,6 +743,12 @@ namespace BtldMapEditor.Front
         void OpenOrEditListItem(ListViewItem item)
         {
             if (item?.Tag is not ValueTag vt || _shown == null) return;
+            if (!CanEdit)
+            {
+                if (CanOpenValue(vt)) NavigateToPath(vt.Path);
+                else ShowReadOnlyValue(item);
+                return;
+            }
             if (vt.IsAbsent)
             {
                 if (vt.IsScalar)
@@ -800,6 +813,7 @@ namespace BtldMapEditor.Front
 
         void List_MouseUp(object sender, MouseEventArgs e)
         {
+            if (!CanEdit) return;
             if (e.Button != MouseButtons.Right) return;
             if (_shown?.Tag is not NodeTag) return;
 
@@ -907,6 +921,7 @@ namespace BtldMapEditor.Front
 
         void StartItemEditing(ListViewItem item)
         {
+            if (!CanEdit) return;
             if (item?.Tag is not ValueTag vt) return;
             string fieldName = item.SubItems.Count > 1 ? item.SubItems[1].Text : IdLabel(vt.Key);
             string regType = item.SubItems.Count > 2 ? item.SubItems[2].Text : vt.Type;
@@ -1003,19 +1018,22 @@ namespace BtldMapEditor.Front
                 object elem = ShowAddVectorItemDialog(vec);
                 if (elem == null) return;
                 object stored = elem is BtlNode || IsScalarLoose(elem) ? elem : 0;
-                if (!TryFrontEdit(() => FrontEdit.Insert(vec, vec.V.Count, stored))) return;
-                if (elem is BtlTable && (string.IsNullOrEmpty(vec.Elem) || vec.Elem == "unknown"))
-                    vec.Elem = "table";
-                else if (elem is BtlStruct && (string.IsNullOrEmpty(vec.Elem) || vec.Elem == "unknown"))
-                    vec.Elem = "struct";
-                else if (elem is BtlVector && (string.IsNullOrEmpty(vec.Elem) || vec.Elem == "unknown"))
-                    vec.Elem = "vector";
-                else if (elem is string && (string.IsNullOrEmpty(vec.Elem) || vec.Elem == "unknown"))
-                    vec.Elem = "string";
-                else if (elem is bool && (string.IsNullOrEmpty(vec.Elem) || vec.Elem == "unknown"))
-                    vec.Elem = "bool";
-                else if (IsNumericLoose(elem) && (string.IsNullOrEmpty(vec.Elem) || vec.Elem == "unknown"))
-                    vec.Elem = GuessLooseType(elem);
+                if (!TryFrontEdit(() =>
+                {
+                    FrontEdit.Insert(vec, vec.V.Count, stored);
+                    if (elem is BtlTable && (string.IsNullOrEmpty(vec.Elem) || vec.Elem == "unknown"))
+                        vec.Elem = "table";
+                    else if (elem is BtlStruct && (string.IsNullOrEmpty(vec.Elem) || vec.Elem == "unknown"))
+                        vec.Elem = "struct";
+                    else if (elem is BtlVector && (string.IsNullOrEmpty(vec.Elem) || vec.Elem == "unknown"))
+                        vec.Elem = "vector";
+                    else if (elem is string && (string.IsNullOrEmpty(vec.Elem) || vec.Elem == "unknown"))
+                        vec.Elem = "string";
+                    else if (elem is bool && (string.IsNullOrEmpty(vec.Elem) || vec.Elem == "unknown"))
+                        vec.Elem = "bool";
+                    else if (IsNumericLoose(elem) && (string.IsNullOrEmpty(vec.Elem) || vec.Elem == "unknown"))
+                        vec.Elem = GuessLooseType(elem);
+                })) return;
                 NotifyChanged(refreshTree: true);
             }
             else if (tag.Target is BtlStruct st)
@@ -1063,13 +1081,17 @@ namespace BtldMapEditor.Front
 
         bool TryFrontEdit(Action edit)
         {
+            if (!CanEdit) return false;
             try
             {
-                edit();
+                _doc.Editing.Execute(edit);
                 return true;
             }
-            catch (FrontEditException ex)
+            catch (Exception ex)
             {
+                // 回滚会替换树，列表及画布必须丢弃旧节点引用。
+                NotifyChanged(refreshTree: true);
+                if (ex is not FrontEditException) throw;
                 MessageBox.Show(ex.Message, "注册表编辑", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return false;
             }
@@ -1121,9 +1143,7 @@ namespace BtldMapEditor.Front
             {
                 ImageIndex = isScalar ? 3 : 2,
                 ForeColor = Color.Gray,
-                ToolTipText = isScalar
-                    ? "未写出的缺省值（文件里没有这个槽；游戏读取为 0 / false）。黑色的 0 才是文件里写出来的。"
-                    : "真正的空指针：表 / 向量 / 字符串未写出。",
+                ToolTipText = "当前工作文档没有此字段。物理槽状态请在原始文件视图核对。",
                 Tag = new ValueTag
                 {
                     Path = path,
@@ -1143,7 +1163,7 @@ namespace BtldMapEditor.Front
             type = "null";
             content = "NULL";
             isScalar = false;
-            if (!SoftSchema.TryGet(schemaType, fieldId, out var hint) || hint == null)
+            if (!(_doc?.Context ?? SoftSchema.DefaultContext).TryGet(schemaType, fieldId, out var hint) || hint == null)
                 return;
 
             switch (hint.Kind)
@@ -1190,35 +1210,13 @@ namespace BtldMapEditor.Front
 
         void BtnLoadFbs_Click(object sender, EventArgs e)
         {
-            using var ofd = new OpenFileDialog
-            {
-                Title = "选择 BTL FlatBuffers Schema (.fbs)",
-                Filter = "FlatBuffers Schema (*.fbs)|*.fbs|所有文件 (*.*)|*.*"
-            };
-            string nearby = FbsSchema.FindNearby();
-            if (!string.IsNullOrEmpty(nearby))
-            {
-                ofd.InitialDirectory = Path.GetDirectoryName(nearby);
-                ofd.FileName = Path.GetFileName(nearby);
-            }
-            if (ofd.ShowDialog(this) != DialogResult.OK) return;
-            try
-            {
-                _fbs = FbsSchema.LoadFile(ofd.FileName);
-                _lblFbsStatus.Text = Path.GetFileName(ofd.FileName);
-                _lblFbsStatus.ForeColor = Color.DarkGreen;
-                RefreshTree(collapseAll: false);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("加载 FBS 失败:\n" + ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+            ChooseSchema(namesOnly: false);
         }
 
         bool HasFbsNames => _fbs != null;
 
         /// <summary>显示名字用用户加载的 fbs；认字段种类（标量 vs 指针）用 SoftSchema，不必点「加载 .fbs」。</summary>
-        FbsSchema ActiveSchema => _fbs ?? SoftSchema.Schema;
+        FbsSchema ActiveSchema => _doc?.Context.Schema ?? SoftSchema.Schema;
 
         string RootNodeTitle() =>
             HasFbsNames && !string.IsNullOrEmpty(_fbs.RootType) ? _fbs.RootType : "table";
@@ -1250,9 +1248,7 @@ namespace BtldMapEditor.Front
                     : "table";
             if (node is BtlVector vec)
             {
-                string elem = HasFbsNames && !string.IsNullOrEmpty(schemaType)
-                    ? schemaType
-                    : (vec.Elem ?? "?");
+                string elem = vec.Elem ?? "?";
                 return "vector<" + elem + ">";
             }
             if (node is BtlStruct)
@@ -1262,28 +1258,33 @@ namespace BtldMapEditor.Front
             return node?.T ?? "unknown";
         }
 
-        /// <summary>加载 fbs 后名称列只用行尾中文注释；没有注释就仍显示编号。</summary>
+        /// <summary>行尾说明隐藏别名标记，保留说明文字；名称由调用方单独显示。</summary>
         static string CommentLabel(string comment)
         {
-            if (string.IsNullOrWhiteSpace(comment)) return null;
-            string c = comment.Trim();
-            int at = c.IndexOf('@');
-            if (at > 0) c = c.Substring(0, at).Trim();
+            string c = FbsSchema.DisplayComment(comment);
             return string.IsNullOrEmpty(c) ? null : c;
         }
 
-        string FieldDisplayName(string schemaType, int fieldId)
+        string FieldDisplayName(string schemaType, int fieldId, string parentPath = null)
         {
-            if (HasFbsNames && _fbs.TryGetField(schemaType, fieldId, out var f))
+            var f = parentPath == null ? null : NamingField(JoinPath(parentPath, IdLabel(fieldId)));
+            if (f == null && HasFbsNames) _fbs.TryGetField(schemaType, fieldId, out f);
+            if (f != null)
             {
                 string c = CommentLabel(f.Comment);
-                if (!string.IsNullOrEmpty(c)) return c;
+                return string.IsNullOrEmpty(c) ? f.Name : f.Name + " · " + c;
             }
             return IdLabel(fieldId);
         }
 
-        string StructMemberDisplayName(string structType, int index)
+        string StructMemberDisplayName(string structType, int index, string parentPath = null)
         {
+            var field = parentPath == null ? null : NamingField(JoinPath(parentPath, IdLabel(index)));
+            if (field != null)
+            {
+                string comment = CommentLabel(field.Comment);
+                return string.IsNullOrEmpty(comment) ? field.Name : field.Name + " · " + comment;
+            }
             if (HasFbsNames && !string.IsNullOrEmpty(structType))
             {
                 var members = _fbs.StructMembers(structType);
@@ -1294,6 +1295,20 @@ namespace BtldMapEditor.Front
                 }
             }
             return IdLabel(index);
+        }
+
+        FbsField NamingField(string path)
+        {
+            if (_fbs == null) return null;
+            string type = _fbs.RootType;
+            FbsField field = null;
+            foreach (string part in path.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (FbsSchema.IsVectorType(type) && part.StartsWith('i')) { type = _fbs.ResolveChildType(type); field = null; continue; }
+                if (!int.TryParse(part, out int id) || !_fbs.TryGetField(type, id, out field)) return null;
+                type = field.Type;
+            }
+            return field;
         }
 
         string ResolveChildSchemaType(string parentType, int fieldId, BtlNode child)
@@ -1638,6 +1653,7 @@ namespace BtldMapEditor.Front
 
         void ApplyScalarEdit(ValueTag vt, string text, ListViewItem row)
         {
+            if (!CanEdit) return;
             object parsed;
             try
             {
@@ -1704,6 +1720,7 @@ namespace BtldMapEditor.Front
             if (t is "f64" or "double")
                 return double.Parse(text, CultureInfo.InvariantCulture);
 
+            if (t == "u64") return ulong.Parse(text, NumberStyles.Integer, CultureInfo.InvariantCulture);
             long n = long.Parse(text, NumberStyles.Integer, CultureInfo.InvariantCulture);
             return t switch
             {
@@ -1759,9 +1776,7 @@ namespace BtldMapEditor.Front
             {
                 if (n.Tag is NodeTag tag && string.Equals(NormalizePath(tag.Path), path, StringComparison.OrdinalIgnoreCase))
                     return n;
-                // 先展开占位再搜
-                if (n.Nodes.Count == 1 && n.Nodes[0].Tag == null && n.Tag is NodeTag nt)
-                    BuildChildren(n, nt.Target, nt.Path, nt.SchemaType);
+                // 仅搜索已经构建的节点；按路径的展开由 EnsurePathBuilt 负责。
                 var found = FindByPath(n.Nodes, path);
                 if (found != null) return found;
             }
@@ -1797,6 +1812,14 @@ namespace BtldMapEditor.Front
                         next = child;
                         break;
                     }
+                }
+                if (next == null && current.Tag is NodeTag parentTag && parentTag.Target is BtlVector vector
+                    && part.StartsWith('i') && int.TryParse(part[1..], out int index) && index >= 0 && index < vector.V.Count
+                    && IsNavigableLoose(vector.V[index]))
+                {
+                    next = MakeTreeNode(VectorItemTitle(index, parentTag.SchemaType), walk, vector.V[index], true, parentTag.SchemaType);
+                    if (HasNavigableChildren(vector.V[index])) next.Nodes.Add(new TreeNode("…"));
+                    current.Nodes.Add(next);
                 }
                 if (next == null) return null;
                 current.Expand();

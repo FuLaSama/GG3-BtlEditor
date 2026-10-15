@@ -48,6 +48,11 @@ public sealed partial class ScriptHost
         editor.Set("tool", Api("editor.tool", OnTool));
         // 公共 Lua 库的桥接接口；普通工具作者使用 game 对象，不接触字段路径。
         var bridge = new Table(_script);
+        bridge.Set("check_registration", Api("editor.internal.check_registration", (_, _) =>
+        {
+            RequireRegistration(); return DynValue.Nil;
+        }));
+        InstallFieldsApi(bridge);
         bridge.Set("index_at_cell", Api("editor.internal.index_at_cell", (_, a) =>
         {
             if (a[2].Type != DataType.Number) return DynValue.Nil;
@@ -64,8 +69,8 @@ public sealed partial class ScriptHost
                 row.Root = table;
                 var value = NsPath.Get(row, member);
                 if (value == null || Convert.ToDouble(value, CultureInfo.InvariantCulture) != a[2].Number) continue;
-                if (required != null && NsPath.Get(row, required) == null
-                    && (alternate == null || NsPath.Get(row, alternate) == null)) continue;
+                if (required != null && NsPath.Look(row, required, true) == null
+                    && (alternate == null || NsPath.Look(row, alternate, true) == null)) continue;
                 found = i;
                 if (!last) break;
             }
@@ -159,6 +164,15 @@ public sealed partial class ScriptHost
             RequireWrite(); FlushGameOperation(); ResetGameOperation(); return DynValue.Nil;
         }));
         bridge.Set("cell_set", Api("editor.internal.cell_set", OnGameCellSet));
+        bridge.Set("resize_terrain", Api("editor.internal.resize_terrain", (_, a) =>
+        {
+            RequireWrite();
+            if (a.Count != 4) throw new FrontEditException("需要 left、up、width、height");
+            int left = AsIndex(a[0]), up = AsIndex(a[1]), width = AsIndex(a[2]), height = AsIndex(a[3]);
+            FlushGameOperation(); ResetGameOperation();
+            TerrainEdits.Resize(Document, left, up, width, height);
+            return DynValue.Nil;
+        }));
         bridge.Set("cell_paste", Api("editor.internal.cell_paste", (_, a) =>
         {
             RequireWrite(); Unwrap(a[0]);

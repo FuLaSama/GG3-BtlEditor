@@ -1,81 +1,85 @@
 <?xml version="1.0" encoding="utf-8"?>
 <page id="stage">
   <section title="回合" kind="form">
-    <field label="总回合" widget="number" type="u16" action="set_round_limit"/>
+    <field label="总回合" widget="number" type="u16" action="set_round_limit" />
   </section>
-  <section title="关卡目标" kind="list" bind="/2/0">
+  <section title="关卡目标" kind="list" bind="/2/0" collapsible="true" collapsed="false">
     <columns>
-      <column header="类别" bind="/0"/>
-      <column header="目标值" bind="/1"/>
-      <column header="参数1" bind="/2"/>
-      <column header="参数2" bind="/3"/>
-      <column header="标志" bind="/4"/>
+      <column header="类型" bind="/0" />
+      <column header="目标值" bind="/1" />
+      <column header="回合" bind="/2" />
+      <column header="目标ID" bind="/3" />
+      <column header="完成情况" bind="/4" />
     </columns>
     <fields>
-      <field id="type" label="类别" widget="number" type="u16" bind="/0"/>
-      <field id="value" label="目标值" widget="number" type="i16" bind="/1"/>
-      <field id="param1" label="参数1" widget="number" type="u16" bind="/2"/>
-      <field id="param2" label="参数2" widget="number" type="u16" bind="/3"/>
-      <field id="flag" label="标志" widget="number" type="u8" bind="/4"/>
+      <field id="type" label="目标类型" widget="number" type="u16" bind="/0" />
+      <field id="value" label="目标值" widget="number" type="i16" bind="/1" />
+      <field id="param1" label="回合" widget="number" type="u16" bind="/2" />
+      <field id="param2" label="目标ID" widget="number" type="u16" bind="/3" />
+      <field id="flag" label="完成情况" widget="number" type="u8" bind="/4" />
     </fields>
     <actions>
-      <action id="add" label="添加目标条件" script="add_target"/>
-      <action id="update" label="保存选中修改" script="update_target"/>
-      <action id="delete" label="删除选中目标" script="delete_target" confirm="确定要删除选中的目标条件吗？"/>
+      <action id="add" label="添加目标条件" script="add_target" />
+      <action id="update" label="保存选中修改" script="update_target" />
+      <action id="delete" label="删除选中目标" script="delete_target" confirm="确定要删除选中的目标条件吗？" />
     </actions>
   </section>
-  <section title="增兵部署点" kind="list" bind="/3/1">
+  <section title="增援点" kind="list" bind="/3/1" collapsible="true" collapsed="false">
     <columns>
-      <column header="格子索引" bind="/0"/>
-      <column header="所属势力" bind="/1"/>
-      <column header="参数1" bind="/2"/>
-      <column header="参数2" bind="/3"/>
+      <column header="地图格" bind="/0" />
+      <column header="朝向" bind="/1" />
+      <column header="仅限海军" bind="/2" />
+      <column header="兵种限制" bind="/3" />
     </columns>
     <fields>
-      <field id="cell" label="格子索引" widget="number" type="u16" bind="/0"/>
-      <field id="faction" label="所属势力" widget="number" type="u8" bind="/1"/>
-      <field id="is_key" label="参数1" widget="check" bind="/2"/>
-      <field id="flag" label="参数2" widget="number" type="u8" bind="/3"/>
+      <field id="cell" label="地图格" widget="number" type="i16" bind="/0" />
+      <field id="faction" label="朝向" widget="number" type="u8" bind="/1" />
+      <field id="is_key" label="仅限海军" widget="check" nullable="true" bind="/2" />
+      <field id="flag" label="兵种限制" widget="number" type="u8" bind="/3" />
     </fields>
     <actions>
-      <action id="add" label="添加部署点" script="add_reinforce"/>
-      <action id="update" label="保存选中修改" script="update_reinforce"/>
-      <action id="delete" label="删除选中部署" script="delete_reinforce" confirm="确定要删除选中的增兵部署点吗？"/>
+      <action id="add" label="添加增援点" script="add_reinforce" />
+      <action id="update" label="保存选中修改" script="update_reinforce" />
+      <action id="delete" label="删除增援点" script="delete_reinforce" confirm="确定删除选中的增援点吗？" />
     </actions>
   </section>
-  <section title="天气" kind="list" bind="/9/0">
+  <section title="天气" kind="list" bind="/9/0" collapsible="true" collapsed="false">
     <columns>
-      <column header="天气类型" bind="/0"/>
-      <column header="起始回合" bind="/1"/>
-      <column header="持续回合数" bind="/2"/>
+      <column header="天气类型" bind="/0" />
+      <column header="起始回合" bind="/1" />
+      <column header="持续回合数" bind="/2" />
     </columns>
     <fields>
-      <field id="type" label="天气类型" widget="number" type="u8" bind="/0"/>
-      <field id="start" label="起始回合" widget="number" type="u16" bind="/1"/>
-      <field id="duration" label="持续回合数" widget="number" type="u16" bind="/2"/>
+      <field id="type" label="天气类型" widget="number" type="u8" bind="/0" />
+      <field id="start" label="起始回合" widget="number" type="u16" bind="/1" />
+      <field id="duration" label="持续回合数" widget="number" type="u16" bind="/2" />
     </fields>
     <actions>
-      <action id="add" label="添加天气" script="add_weather"/>
-      <action id="update" label="保存选中修改" script="update_weather"/>
-      <action id="delete" label="删除选中天气" script="delete_weather" confirm="确定要删除选中的天气配置吗？"/>
+      <action id="add" label="添加天气" script="add_weather" />
+      <action id="update" label="保存选中修改" script="update_weather" />
+      <action id="delete" label="删除选中天气" script="delete_weather" confirm="确定要删除选中的天气配置吗？" />
     </actions>
   </section>
   <section title="迷雾" kind="form">
-    <field id="fog" label="启用战争迷雾" widget="check" action="ui_fog"/>
+    <field id="fog" label="启用战争迷雾" widget="check" action="ui_fog" />
   </section>
   <section title="地图尺寸与可游玩区域" kind="form">
-    <field id="map_width" label="地图总宽度" type="u16" bind="/1/0.0" readonly="true"/>
-    <field id="map_height" label="地图总高度" type="u16" bind="/1/0.1" readonly="true"/>
-    <field id="left_margin" label="左侧不可玩留白" type="u16" max="500" action="ui_left_margin"/>
-    <field id="top_margin" label="顶部不可玩留白" type="u16" max="500" action="ui_top_margin"/>
-    <field id="play_width" label="可游玩区域宽度" type="u16" max="500" action="ui_play_width"/>
-    <field id="play_height" label="可游玩区域高度" type="u16" max="500" action="ui_play_height"/>
+    <field id="map_width" label="地图总宽度" type="u16" bind="/1/0.0" readonly="true" />
+    <field id="map_height" label="地图总高度" type="u16" bind="/1/0.1" readonly="true" />
+    <field id="left_margin" label="左侧不可玩留白" type="u16" max="500" action="ui_left_margin" />
+    <field id="top_margin" label="顶部不可玩留白" type="u16" max="500" action="ui_top_margin" />
+    <field id="play_width" label="可游玩区域宽度" type="u16" max="500" action="ui_play_width" />
+    <field id="play_height" label="可游玩区域高度" type="u16" max="500" action="ui_play_height" />
   </section>
   <section title="扩展地图" kind="form">
-    <field id="left" label="向左扩展格数" type="u16" max="500" default="0"/>
-    <field id="right" label="向右扩展格数" type="u16" max="500" default="0"/>
-    <field id="up" label="向上扩展格数" type="u16" max="500" default="0"/>
-    <field id="down" label="向下扩展格数" type="u16" max="500" default="0"/>
-    <actions><action id="resize" label="应用并重构地图尺寸" script="resize_map"/></actions>
+    <field id="left" label="向左扩展格数" type="u16" max="500" default="0" />
+    <field id="right" label="向右扩展格数" type="u16" max="500" default="0" />
+    <field id="up" label="向上扩展格数" type="u16" max="500" default="0" />
+    <field id="down" label="向下扩展格数" type="u16" max="500" default="0" />
+    <actions>
+      <action id="resize" label="应用并重构地图尺寸" script="resize_map" />
+    </actions>
   </section>
+  <section id="stage_details" title="脚本、增援与存档" kind="details" bind="/" model="Root" omit="1,2,3,4,5,6,9,10" labels="../fields/research-labels.json" collapsed="true" collapsible="true" />
+  <section id="reinforce_details" title="增援点附加项" kind="details" bind="/3" model="BattleInfo" omit="1" labels="../fields/research-labels.json" collapsible="true" collapsed="true" />
 </page>

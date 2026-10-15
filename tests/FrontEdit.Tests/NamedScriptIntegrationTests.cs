@@ -15,6 +15,7 @@ public class NamedScriptIntegrationTests
         Assert.True(loaded.Ok, string.Join("\n", loaded.Errors));
         var host = new ScriptHost();
         foreach (var script in loaded.Bundle.Scripts) host.Execute(script.Text, script.Name);
+        host.Execute(File.ReadAllText(Path.Combine(EditorScripts.Root(), "EditorLayout/examples/常用工具.lua")), "example-tools.lua");
         host.Load(doc);
         return host;
     }
@@ -41,7 +42,8 @@ public class NamedScriptIntegrationTests
     {
         string directory = Path.Combine(EditorScripts.Root(), "EditorLayout", "scripts");
         var scripts = Directory.GetFiles(directory, "*.lua", SearchOption.AllDirectories)
-            .Where(path => !Path.GetRelativePath(directory, path).StartsWith("common" + Path.DirectorySeparatorChar)).ToArray();
+            .Where(path => !Path.GetRelativePath(directory, path).StartsWith("common" + Path.DirectorySeparatorChar)
+                && !Path.GetRelativePath(directory, path).StartsWith("objects" + Path.DirectorySeparatorChar)).ToArray();
         Assert.NotEmpty(scripts);
         foreach (string path in scripts)
             Assert.False(Regex.IsMatch(File.ReadAllText(path), "[\"']/[0-9]"), "业务脚本仍包含字段路径：" + path);

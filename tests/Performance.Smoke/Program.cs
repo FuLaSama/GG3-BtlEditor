@@ -37,19 +37,27 @@ internal static class Program
             using var form=Measure("create_window",()=>new MainEditorForm(true)
             {ShowInTaskbar=false,Opacity=0,StartPosition=FormStartPosition.Manual,Location=new Point(-32000,-32000)});
             form.Show();
-            Set(form,"_front",session); Set(form,"_isInitialLoading",true);
+            Set(form,"_front",session);
             Measure("load_ui",()=>{Call(form,"OnDocumentLoaded");return true;});
             Measure("initial_history",()=>{Call(form,"InitHistory");return true;});
-            Set(form,"_isInitialLoading",false);
             var canvas=Field<EditorMapCanvas>(form,"mapCanvas");
             using var bitmap=new Bitmap(canvas.Width,canvas.Height);
             Measure("sketch_first_paint",()=>{canvas.DrawToBitmap(bitmap,new Rectangle(Point.Empty,bitmap.Size));return true;});
             Measure("select_cell",()=>{Call(form,"CellSelectedClick",0);return true;});
             Measure("refresh_pages",()=>{Call(form,"RefreshEditorPages");return true;});
             var host=Field<ScriptHost>(form,"_stageHost");
+            host.Execute(File.ReadAllText(Path.Combine(root,"EditorLayout/examples/常用工具.lua")),"example-tools.lua");
             try
             {
                 Measure("tool_all_units",()=>host.RunTool("heal_all"));
+                Measure("tool_assign_uids",()=>host.RunTool("assign_unit_uids"));
+                var onmap=FrontNav.Agents(doc).V.Cast<BtlTable>().Select((row,index)=>(Row:row,Index:index,Cell:FrontNav.ToI64(FrontNav.ChildStruct(row,0).V[0])))
+                    .Where(row=>row.Cell>=0 && row.Cell<FrontNav.MapWidth(doc)*FrontNav.MapHeight(doc))
+                    .OrderBy(row=>row.Cell).ThenBy(row=>row.Index).ToArray();
+                if(!onmap.Select(row=>(int)FrontNav.MemberU16(FrontNav.ChildStruct(row.Row,0),2)).SequenceEqual(Enumerable.Range(1,onmap.Length)))
+                    throw new Exception("UID assignment order is incorrect");
+                var uids=FrontNav.Agents(doc).V.Cast<BtlTable>().Select(row=>FrontNav.MemberU16(FrontNav.ChildStruct(row,0),2)).ToArray();
+                if(uids.Distinct().Count()!=uids.Length) throw new Exception("UID assignment left duplicate IDs");
 
             }
             catch(Exception e){if(args.Contains("--verify"))throw; Results["tool_error"]=e.GetBaseException().Message;Console.WriteLine("Tool error: "+e.GetBaseException().Message);}
@@ -169,13 +177,12 @@ internal static class Program
         if(BtlFrontJson.ContentEquals(before,host.Document)) throw new Exception("large document redo failed");
         for(int i=0;i<40;i++)
         {
-            host.Document.Root.F[99]=BtlFrontJson.Scalar("u16",(ushort)i);
-            Call(form,"AddHistoryState");
+            host.Document.Editing.Execute(() => FrontEdit.SetScalar(host.Document.Root, 99, "u16", (ushort)i));
         }
-        var history=Field<List<BtlFrontDocument>>(form,"_history");
-        if(Field<long>(form,"_historyBytes")>128L*1024*1024 || history.Count<2 || history.Count>100)
+        var history=Field<BtldMapEditor.Front.FrontSession>(form,"_front").Editing;
+        if(history.HistoryBytes>128L*1024*1024 || history.HistoryCount<2 || history.HistoryCount>100)
             throw new Exception("history memory budget failed");
-        Console.WriteLine($"Large history PASS: tool commit, undo/redo, memory budget ({history.Count} retained frames).");
+        Console.WriteLine($"Large history PASS: tool commit, undo/redo, memory budget ({history.HistoryCount} retained frames).");
     }
     static T Measure<T>(string name,Func<T> action)
     {

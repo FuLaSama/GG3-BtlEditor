@@ -1,0 +1,4 @@
+{
+  "workspace.library": ["./EditorLayout/api"],
+  "diagnostics.globals": ["editor", "game"]
+}

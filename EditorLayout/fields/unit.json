@@ -1,0 +1,332 @@
+{
+  "version": 1,
+  "revision": "2026-10-15.unit.research",
+  "evidence": "battle - 人工命名版.fbs 的注释；见 fields/research-labels.json 的研究快照。AgentInfo 保留等宽合并成员，位段映射不变。",
+  "fields": [
+    {
+      "id": "unit.info",
+      "owner": "AIAgent",
+      "path": "/0",
+      "kind": "struct",
+      "confidence": "tentative",
+      "note": "沿用现有编辑器映射；不表示本轮新增游戏内验证。"
+    },
+    {
+      "id": "unit.cell_index",
+      "owner": "AIAgent",
+      "path": ".0",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "沿用现有编辑器映射；不表示本轮新增游戏内验证。",
+      "parent": "unit.info"
+    },
+    {
+      "id": "unit.faction",
+      "owner": "AIAgent",
+      "path": ".1",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "沿用现有编辑器映射；不表示本轮新增游戏内验证。",
+      "parent": "unit.info"
+    },
+    {
+      "id": "unit.agent_id",
+      "owner": "AIAgent",
+      "path": ".2",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "沿用现有编辑器映射；不表示本轮新增游戏内验证。",
+      "parent": "unit.info"
+    },
+    {
+      "id": "unit.type_id",
+      "owner": "AIAgent",
+      "path": ".3",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "沿用现有编辑器映射；不表示本轮新增游戏内验证。",
+      "parent": "unit.info"
+    },
+    {
+      "id": "unit.hp",
+      "owner": "AIAgent",
+      "path": ".6",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "沿用现有编辑器映射；不表示本轮新增游戏内验证。",
+      "parent": "unit.info"
+    },
+    {
+      "id": "unit.max_hp",
+      "owner": "AIAgent",
+      "path": ".7",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "沿用现有编辑器映射；不表示本轮新增游戏内验证。",
+      "parent": "unit.info"
+    },
+    {
+      "id": "unit.parameter_8",
+      "owner": "AIAgent",
+      "path": ".8",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "血率；名称根据人工注释修订，保留现有 API 标识以兼容脚本。",
+      "parent": "unit.info"
+    },
+    {
+      "id": "unit.parameter_9",
+      "owner": "AIAgent",
+      "path": ".9",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "升级进度；名称根据人工注释修订，保留现有 API 标识以兼容脚本。",
+      "parent": "unit.info"
+    },
+    {
+      "id": "unit.level",
+      "owner": "AIAgent",
+      "path": ".4",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "沿用现有编辑器映射；不表示本轮新增游戏内验证。",
+      "parent": "unit.info",
+      "shift": 0,
+      "width": 8
+    },
+    {
+      "id": "unit.stack",
+      "owner": "AIAgent",
+      "path": ".4",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "沿用现有编辑器映射；不表示本轮新增游戏内验证。",
+      "parent": "unit.info",
+      "shift": 8,
+      "width": 8
+    },
+    {
+      "id": "unit.direction",
+      "owner": "AIAgent",
+      "path": ".5",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "沿用现有编辑器映射；不表示本轮新增游戏内验证。",
+      "parent": "unit.info",
+      "shift": 0,
+      "width": 8
+    },
+    {
+      "id": "unit.mobility",
+      "owner": "AIAgent",
+      "path": ".5",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "沿用现有编辑器映射；不表示本轮新增游戏内验证。",
+      "parent": "unit.info",
+      "shift": 8,
+      "width": 8
+    },
+    {
+      "id": "unit.play_mode",
+      "owner": "AIAgent",
+      "path": "/2",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "关键目标标记；名称根据人工注释修订，保留现有 API 标识以兼容脚本。"
+    },
+    {
+      "id": "unit.ai_target",
+      "owner": "AIAgent",
+      "path": "/5",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "初始士气；名称根据人工注释修订，保留现有 API 标识以兼容脚本。"
+    },
+    {
+      "id": "unit.faction_extra",
+      "owner": "AIAgent",
+      "path": "/6",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "士气恢复回合数；名称根据人工注释修订，保留现有 API 标识以兼容脚本。"
+    },
+    {
+      "id": "unit.behavior",
+      "owner": "AIAgent",
+      "path": "/3",
+      "kind": "table",
+      "confidence": "tentative",
+      "note": "沿用现有编辑器映射；不表示本轮新增游戏内验证。"
+    },
+    {
+      "id": "unit.behavior.parameter_0",
+      "owner": "AIAgent",
+      "path": "/0",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "AI类型；名称根据人工注释修订，保留现有 API 标识以兼容脚本。",
+      "parent": "unit.behavior"
+    },
+    {
+      "id": "unit.behavior.id",
+      "owner": "AIAgent",
+      "path": "/1",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "AI积极程度；名称根据人工注释修订，保留现有 API 标识以兼容脚本。",
+      "parent": "unit.behavior"
+    },
+    {
+      "id": "unit.behavior.parameter_2",
+      "owner": "AIAgent",
+      "path": "/2",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "目标地图格；名称根据人工注释修订，保留现有 API 标识以兼容脚本。",
+      "parent": "unit.behavior"
+    },
+    {
+      "id": "unit.behavior.radius",
+      "owner": "AIAgent",
+      "path": "/3",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "移动限制；名称根据人工注释修订，保留现有 API 标识以兼容脚本。",
+      "parent": "unit.behavior"
+    },
+    {
+      "id": "unit.behavior.parameter_4",
+      "owner": "AIAgent",
+      "path": "/4",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "警戒半径；名称根据人工注释修订，保留现有 API 标识以兼容脚本。",
+      "parent": "unit.behavior"
+    },
+    {
+      "id": "unit.behavior.center_cell",
+      "owner": "AIAgent",
+      "path": "/5",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "目标部队UID；名称根据人工注释修订，保留现有 API 标识以兼容脚本。",
+      "parent": "unit.behavior"
+    },
+    {
+      "id": "unit.behavior.parameter_6",
+      "owner": "AIAgent",
+      "path": "/6",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "警戒地图格；名称根据人工注释修订，保留现有 API 标识以兼容脚本。",
+      "parent": "unit.behavior"
+    },
+    {
+      "id": "unit.general",
+      "owner": "AIAgent",
+      "path": "/11",
+      "kind": "table",
+      "confidence": "tentative",
+      "note": "沿用现有编辑器映射；不表示本轮新增游戏内验证。"
+    },
+    {
+      "id": "unit.general.id",
+      "owner": "AIAgent",
+      "path": "/0",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "沿用现有编辑器映射；不表示本轮新增游戏内验证。",
+      "parent": "unit.general"
+    },
+    {
+      "id": "unit.general.active",
+      "owner": "AIAgent",
+      "path": "/1",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "激活状态，具体效果暂定；名称根据人工注释修订，保留现有 API 标识以兼容脚本。",
+      "parent": "unit.general"
+    },
+    {
+      "id": "unit.general.parameter_2",
+      "owner": "AIAgent",
+      "path": "/2",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "晋升等级；名称根据人工注释修订，保留现有 API 标识以兼容脚本。",
+      "parent": "unit.general"
+    },
+    {
+      "id": "unit.special",
+      "owner": "AIAgent",
+      "path": "/10",
+      "kind": "table",
+      "confidence": "tentative",
+      "note": "沿用现有编辑器映射；不表示本轮新增游戏内验证。"
+    },
+    {
+      "id": "unit.special.id",
+      "owner": "AIAgent",
+      "path": "/0",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "沿用现有编辑器映射；不表示本轮新增游戏内验证。",
+      "parent": "unit.special"
+    },
+    {
+      "id": "unit.special.parameter_1",
+      "owner": "AIAgent",
+      "path": "/1",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "特种部队等级；名称根据人工注释修订，保留现有 API 标识以兼容脚本。",
+      "parent": "unit.special"
+    },
+    {
+      "id": "unit.special.hp",
+      "owner": "AIAgent",
+      "path": "/2",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "沿用现有编辑器映射；不表示本轮新增游戏内验证。",
+      "parent": "unit.special"
+    },
+    {
+      "id": "unit.special.max_hp",
+      "owner": "AIAgent",
+      "path": "/3",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "沿用现有编辑器映射；不表示本轮新增游戏内验证。",
+      "parent": "unit.special"
+    },
+    {
+      "id": "unit.special.parameter_4",
+      "owner": "AIAgent",
+      "path": "/4",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "特种部队血率；名称根据人工注释修订，保留现有 API 标识以兼容脚本。",
+      "parent": "unit.special"
+    },
+    {
+      "id": "unit.special.parameter_5",
+      "owner": "AIAgent",
+      "path": "/5",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "特种部队升级位标记；名称根据人工注释修订，保留现有 API 标识以兼容脚本。",
+      "parent": "unit.special"
+    },
+    {
+      "id": "unit.general.medal",
+      "owner": "AIAgent",
+      "parent": "unit.general",
+      "path": "/3",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "将领勋章 ID，跟随将领配置组位置。"
+    }
+  ]
+}

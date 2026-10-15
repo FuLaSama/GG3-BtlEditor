@@ -51,10 +51,10 @@ namespace BtldMapEditor
             Point pt = mapCanvas.PointToClient(new Point(e.X, e.Y));
             int idx = mapCanvas.HitTestCell(pt);
             if (idx >= 0)
-                ApplyPaletteToCell(idx, drag.Item, drag.Target, recordHistory: true);
+                ApplyPaletteToCell(idx, drag.Item, drag.Target);
         }
 
-        bool ApplyPaletteToCell(int cellIdx, PaletteItem item, PaletteTarget target, bool recordHistory)
+        bool ApplyPaletteToCell(int cellIdx, PaletteItem item, PaletteTarget target)
         {
             if (item == null || cellIdx < 0 || cellIdx >= mapCanvas.Cells.Count) return false;
             bool ok = target == PaletteTarget.Climate
@@ -81,12 +81,10 @@ namespace BtldMapEditor
             {
                 RefreshSelectedTerrainUi();
             }
-            if (recordHistory)
-                AddHistoryState();
             return true;
         }
 
-        void ClearPaletteLayer(int cellIdx, PaletteTarget target, bool recordHistory)
+        void ClearPaletteLayer(int cellIdx, PaletteTarget target)
         {
             if (cellIdx < 0 || cellIdx >= mapCanvas.Cells.Count) return;
             bool ok = target == PaletteTarget.Climate
@@ -101,8 +99,6 @@ namespace BtldMapEditor
             {
                 RefreshSelectedTerrainUi();
             }
-            if (recordHistory)
-                AddHistoryState();
         }
 
         void MapCanvasMouseDown(object sender, MouseEventArgs e)
@@ -116,7 +112,7 @@ namespace BtldMapEditor
             if (mapCanvas.GetCellAtPoint(mapX, mapY) != _selectedCellIdx) return;
             _terrainOffsetDragging = true;
             mapCanvas.Capture = true;
-            ApplyTerrainOffsetFromMouse(mapX, mapY, recordHistory: false);
+            ApplyTerrainOffsetFromMouse(mapX, mapY);
         }
 
         void MapCanvasMouseMove(object sender, MouseEventArgs e)
@@ -125,7 +121,7 @@ namespace BtldMapEditor
             if ((Control.ModifierKeys & Keys.Shift) == 0 || e.Button != MouseButtons.Left) return;
             float mapX = e.X - mapCanvas.AutoScrollPosition.X;
             float mapY = e.Y - mapCanvas.AutoScrollPosition.Y;
-            ApplyTerrainOffsetFromMouse(mapX, mapY, recordHistory: false);
+            ApplyTerrainOffsetFromMouse(mapX, mapY);
         }
 
         void MapCanvasMouseUp(object sender, MouseEventArgs e)
@@ -133,7 +129,6 @@ namespace BtldMapEditor
             if (!_terrainOffsetDragging || e.Button != MouseButtons.Left) return;
             _terrainOffsetDragging = false;
             mapCanvas.Capture = false;
-            AddHistoryState();
         }
 
         static bool IsProtectedRandomTerrain(int terrainId)
@@ -148,12 +143,14 @@ namespace BtldMapEditor
             if (!HasDoc || _selectedCellIdx < 0 || _selectedCellIdx >= mapCanvas.Cells.Count) return;
             if (ActivePageId != "terrain") return;
 
-            var cell = mapCanvas.Cells[_selectedCellIdx];
-            RandomizeCellVariants(cell, Random.Shared);
+            if (!RunNativeEdit(() =>
+            {
+                var cell = TerrainEdits.Project(Doc)[_selectedCellIdx];
+                RandomizeCellVariants(_selectedCellIdx, cell, Random.Shared);
+            })) return;
 
             mapCanvas.Invalidate();
             RefreshSelectedTerrainUi();
-            AddHistoryState();
             statusLabel.Text = $"随机变种：地块 #{_selectedCellIdx}";
         }
 
@@ -162,8 +159,8 @@ namespace BtldMapEditor
             if (!HasDoc || _selectedCellIdx < 0 || _selectedCellIdx >= mapCanvas.Cells.Count) return;
             if (ActivePageId != "terrain") return;
 
-            var cell = mapCanvas.Cells[_selectedCellIdx];
-            int changed = RandomizeCellOffsets(cell, Random.Shared);
+            int changed = 0;
+            if (!RunNativeEdit(() => changed = RandomizeCellOffsets(TerrainEdits.Project(Doc)[_selectedCellIdx], Random.Shared))) return;
 
             if (changed == 0)
             {
@@ -173,7 +170,6 @@ namespace BtldMapEditor
 
             mapCanvas.Invalidate();
             RefreshSelectedTerrainUi();
-            AddHistoryState();
             statusLabel.Text = $"随机偏移：地块 #{_selectedCellIdx}（{changed} 层）";
         }
 
@@ -182,12 +178,14 @@ namespace BtldMapEditor
             if (!HasDoc || mapCanvas.Cells.Count == 0) return;
 
             var rng = Random.Shared;
-            foreach (var cell in mapCanvas.Cells)
-                RandomizeCellVariants(cell, rng);
+            if (!RunNativeEdit(() =>
+            {
+                var cells = TerrainEdits.Project(Doc);
+                for (int i = 0; i < cells.Count; i++) RandomizeCellVariants(i, cells[i], rng);
+            })) return;
 
             mapCanvas.Invalidate();
             RefreshSelectedTerrainUi();
-            AddHistoryState();
             statusLabel.Text = $"全局随机变种：{mapCanvas.Cells.Count} 格";
         }
 
@@ -197,12 +195,13 @@ namespace BtldMapEditor
 
             var rng = Random.Shared;
             int layerCount = 0;
-            foreach (var cell in mapCanvas.Cells)
-                layerCount += RandomizeCellOffsets(cell, rng);
+            if (!RunNativeEdit(() =>
+            {
+                foreach (var cell in TerrainEdits.Project(Doc)) layerCount += RandomizeCellOffsets(cell, rng);
+            })) return;
 
             mapCanvas.Invalidate();
             RefreshSelectedTerrainUi();
-            AddHistoryState();
             statusLabel.Text = layerCount > 0
                 ? $"全局随机偏移：{mapCanvas.Cells.Count} 格，{layerCount} 层"
                 : "全局随机偏移：地图上没有可偏移的贴图层";
@@ -253,7 +252,7 @@ namespace BtldMapEditor
             return TerrainEdits.HasContent(ViewOf(cell), TerrainLayerKey(target));
         }
 
-        void ApplyTerrainOffsetFromMouse(float mapX, float mapY, bool recordHistory)
+        void ApplyTerrainOffsetFromMouse(float mapX, float mapY)
         {
             if (_selectedCellIdx < 0 || _selectedCellIdx >= mapCanvas.Cells.Count) return;
             var target = GetActiveTerrainLayerTarget();
@@ -283,39 +282,58 @@ namespace BtldMapEditor
                 Input = EditInput(("layer", TerrainLayerKey(target)), ("dx", dx), ("dy", dy))
             })) return;
             RefreshSelectedTerrainUi();
-            if (recordHistory) AddHistoryState();
         }
 
-        static bool CellHasProtectedRiverLayer(MapCell cell)
+        static BtlStruct GetTerrainLayer(TerrainEdits.Cell cell, PaletteTarget target) => target switch
         {
-            if (LayerHasContent(cell, PaletteTarget.Decor)
-                && IsProtectedRandomTerrain(FrontNav.AttrU8(GetLayerAttr(cell, PaletteTarget.Decor), 0)))
+            PaletteTarget.Decor => cell.Decor,
+            PaletteTarget.Main => cell.Main,
+            PaletteTarget.Secondary => cell.Secondary,
+            _ => null
+        };
+
+        bool RunNativeEdit(Action edit)
+        {
+            if (!HasDoc || !_front.CanExport) return false;
+            EndMapGesture();
+            try { Doc.Editing.Execute(edit); }
+            catch (Exception ex)
+            {
+                OnXmlCommitted();
+                ShowLayoutErrors(new List<string> { ex.GetBaseException().Message });
+                return false;
+            }
+            OnXmlCommitted();
+            return true;
+        }
+
+        static bool CellHasProtectedRiverLayer(TerrainEdits.Cell cell)
+        {
+            if (TerrainEdits.HasContent(cell, "decor")
+                && IsProtectedRandomTerrain(FrontNav.AttrU8(GetTerrainLayer(cell, PaletteTarget.Decor), 0)))
                 return true;
-            if (LayerHasContent(cell, PaletteTarget.Main)
-                && IsProtectedRandomTerrain(FrontNav.AttrU8(GetLayerAttr(cell, PaletteTarget.Main), 0)))
+            if (TerrainEdits.HasContent(cell, "main")
+                && IsProtectedRandomTerrain(FrontNav.AttrU8(GetTerrainLayer(cell, PaletteTarget.Main), 0)))
                 return true;
-            if (LayerHasContent(cell, PaletteTarget.Secondary)
-                && IsProtectedRandomTerrain(FrontNav.AttrU8(GetLayerAttr(cell, PaletteTarget.Secondary), 0)))
+            if (TerrainEdits.HasContent(cell, "secondary")
+                && IsProtectedRandomTerrain(FrontNav.AttrU8(GetTerrainLayer(cell, PaletteTarget.Secondary), 0)))
                 return true;
             return false;
         }
 
-        static void RandomizeCellVariants(MapCell cell, Random rng)
+        void RandomizeCellVariants(int index, TerrainEdits.Cell cell, Random rng)
         {
             if (!CellHasProtectedRiverLayer(cell))
             {
-                ushort t = cell.Terrain;
-                int climate = t & 7;
-                int flags = t >> 8;
                 int variation = EditorPaletteCatalog.PickRandomClimateVariant(rng);
-                cell.Terrain = (ushort)((climate & 7) | ((variation & 0x1F) << 3) | (flags << 8));
+                TerrainEdits.SetVariant(Doc, index, variation);
             }
             RandomizeLayerVariant(cell, PaletteTarget.Decor, rng);
             RandomizeLayerVariant(cell, PaletteTarget.Main, rng);
             RandomizeLayerVariant(cell, PaletteTarget.Secondary, rng);
         }
 
-        static int RandomizeCellOffsets(MapCell cell, Random rng)
+        static int RandomizeCellOffsets(TerrainEdits.Cell cell, Random rng)
         {
             int changed = 0;
             if (RandomizeLayerOffset(cell, PaletteTarget.Decor, rng)) changed++;
@@ -324,19 +342,19 @@ namespace BtldMapEditor
             return changed;
         }
 
-        static void RandomizeLayerVariant(MapCell cell, PaletteTarget target, Random rng)
+        static void RandomizeLayerVariant(TerrainEdits.Cell cell, PaletteTarget target, Random rng)
         {
-            if (!LayerHasContent(cell, target)) return;
-            var attr = GetLayerAttr(cell, target);
+            if (!TerrainEdits.HasContent(cell, TerrainLayerKey(target))) return;
+            var attr = GetTerrainLayer(cell, target);
             int id = FrontNav.AttrU8(attr, 0);
             if (IsProtectedRandomTerrain(id)) return;
             FrontNav.SetMember(attr, 1, (byte)EditorPaletteCatalog.PickRandomTerrainVariant(id, rng));
         }
 
-        static bool RandomizeLayerOffset(MapCell cell, PaletteTarget target, Random rng)
+        static bool RandomizeLayerOffset(TerrainEdits.Cell cell, PaletteTarget target, Random rng)
         {
-            if (!LayerHasContent(cell, target)) return false;
-            var attr = GetLayerAttr(cell, target);
+            if (!TerrainEdits.HasContent(cell, TerrainLayerKey(target))) return false;
+            var attr = GetTerrainLayer(cell, target);
             int id = FrontNav.AttrU8(attr, 0);
             if (IsProtectedRandomTerrain(id)) return false;
             FrontNav.SetMember(attr, 2, (sbyte)rng.Next(RandomOffsetMin, RandomOffsetMax + 1));
@@ -408,7 +426,7 @@ namespace BtldMapEditor
             {
                 if (_terrainBrush != null)
                 {
-                    if (!ApplyPaletteToCell(_selectedCellIdx, _terrainBrush.Item, _terrainBrush.Target, recordHistory: false)) return;
+                    if (!ApplyPaletteToCell(_selectedCellIdx, _terrainBrush.Item, _terrainBrush.Target)) return;
                     CellSelectedClick(_selectedCellIdx);
                     mapCanvas.Invalidate();
                     statusLabel.Text = $"已将「{_terrainBrush.Item.Label}」应用到地块 #{_selectedCellIdx}";
@@ -436,7 +454,6 @@ namespace BtldMapEditor
                 mapCanvas.Invalidate();
                 statusLabel.Text = $"粘贴成功：已将地标建筑与工事数据粘贴至地块 #{_selectedCellIdx}";
             }
-            AddHistoryState();
         }
 
         private void PaintCell(int cellIdx)
@@ -445,7 +462,7 @@ namespace BtldMapEditor
             if (ActivePageId == "terrain")
             {
                 if (_terrainBrush != null)
-                    ApplyPaletteToCell(cellIdx, _terrainBrush.Item, _terrainBrush.Target, recordHistory: false);
+                    ApplyPaletteToCell(cellIdx, _terrainBrush.Item, _terrainBrush.Target);
                 else if (_copiedTerrain.HasValue)
                     PasteTerrainOnto(cellIdx);
             }

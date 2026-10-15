@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
+using BtlCore.Fb;
 using BtlCore.Front;
 using BtlCore.Scripting;
 using BtldMapEditor.Front;
@@ -92,40 +93,22 @@ namespace BtldMapEditor
             return decimal.Parse(field.Default, CultureInfo.InvariantCulture);
         }
 
-        void RefreshActionFields()
-        {
-            using var read = _host.BeginRead();
-            bool previous = _loading;
-            _loading = true;
-            try
-            {
-                foreach (var form in _forms)
-                {
-                    if (string.IsNullOrEmpty(form.Field.Action) || !_host.CanGet(form.Field.Action)) continue;
-                    object value = _host.CallGet(form.Field.Action, new ScriptArgs { CellIndex = _cell });
-                    WriteEditor(form.Editor, value);
-                    form.Shown = ReadEditor(form.Editor);
-                }
-            }
-            finally { _loading = previous; }
-        }
-
         Control BuildTree(LayoutSection section)
         {
             var holder = new TreeSection { Section = section, Editors = new() };
             var stack = NewStack();
-            holder.List = new ListView { View = View.Details, FullRowSelect = true, MultiSelect = false, Height = 150, Dock = DockStyle.Top };
+            holder.PayloadStatus = new Label { AutoSize = true, ForeColor = Color.DarkRed, MaximumSize = new Size(480, 0) };
+            StackAdd(stack, holder.PayloadStatus);
+            holder.List = new BufferedListView { View = View.Details, FullRowSelect = true, MultiSelect = false, Height = 150, Dock = DockStyle.Top };
             foreach (var col in section.Columns) holder.List.Columns.Add(col.Header, 85);
             StackAdd(stack, holder.List);
             holder.Nodes = new TreeView { Height = 220, Dock = DockStyle.Top, HideSelection = false };
             StackAdd(stack, holder.Nodes);
             if (section.Groups.Count > 0)
             {
-                foreach (var group in section.Groups)
+                for(int i=0;i<section.Groups.Count;i++)
                 {
-                    var grid = NewTriple();
-                    foreach (var row in group.Rows) PlaceRow(grid, row, holder);
-                    StackAdd(stack, Group(group.Title, grid));
+                    StackAdd(stack,BuildGroup(section.Groups[i],holder,SectionKey(section)+"/"+i));
                 }
             }
             else
@@ -150,6 +133,9 @@ namespace BtldMapEditor
         }
 
         BtlVector TreeVector(TreeSection tree) => _host.ReadNode(tree.Section.Bind) as BtlVector;
+        static bool TreeLibraryAvailable(BtlVector vector) => vector == null
+            || (string.IsNullOrEmpty(vector.Enc) || PackedJsonStream.EncIsPackedJson(vector.Enc))
+                && vector.V.All(item => item is JsonObject);
         JsonObject SelectedTree(TreeSection tree)
         {
             int i = tree.List.SelectedIndices.Count == 0 ? -1 : tree.List.SelectedIndices[0];
@@ -163,7 +149,9 @@ namespace BtldMapEditor
             var nodePath = NodePath(tree.Nodes.SelectedNode);
             tree.List.Items.Clear();
             var vec = TreeVector(tree);
-            if (vec != null)
+            bool available = TreeLibraryAvailable(vec);
+            tree.PayloadStatus.Text = available ? "" : "行为树载荷未能解码或类型暂不支持，原始字节保留；此处不能编辑。";
+            if (vec != null && available)
             {
                 foreach (var item in vec.V)
                 {
@@ -227,15 +215,21 @@ namespace BtldMapEditor
                 object shown = value is JsonArray arr ? arr.Select(v => (object)v?.ToString()).ToArray()
                     : value == null ? null : value.ToString();
                 WriteEditor(editor, shown);
+                if (editor is TextBox text)
+                    text.PlaceholderText = (field.Scope == "node" ? node : root) == null ? "未选中对象"
+                        : value == null ? "未写" : "";
             }
             foreach (var (cmd, button) in tree.Buttons)
-                button.Enabled = cmd.Enabled && (cmd.Id == "add" || (root != null
+                button.Enabled = cmd.Enabled && TreeLibraryAvailable(TreeVector(tree)) && (cmd.Id == "add" || (root != null
                     && ((cmd.Id != "add_child" && cmd.Id != "delete_node") || node != null)));
         }
 
         void RunTreeCommand(TreeSection tree, LayoutCommand cmd)
         {
             if (_loading || _host.Document == null || !cmd.Enabled) return;
+            Dictionary<string, object> input;
+            try { input = ReadInputs(tree.Editors); }
+            catch (Exception ex) { ShowError(ex); return; }
             try
             {
                 int? index = tree.List.SelectedIndices.Count == 0 ? null : tree.List.SelectedIndices[0];
@@ -244,7 +238,6 @@ namespace BtldMapEditor
                 if ((cmd.Id == "add_child" || cmd.Id == "delete_node") && path == null) return;
                 if (!string.IsNullOrEmpty(cmd.Confirm) && MessageBox.Show(cmd.Confirm, cmd.Label,
                     MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
-                var input = ReadInputs(tree.Editors);
                 if (path != null) input["path"] = path.Select(i => (object)i).ToArray();
                 if (cmd.Id == "delete_node")
                 {
@@ -269,6 +262,7 @@ namespace BtldMapEditor
         {
             public ListView List;
             public TreeView Nodes;
+            public Label PayloadStatus;
             public List<(LayoutCommand Command, Button Button)> Buttons { get; } = new();
         }
     }

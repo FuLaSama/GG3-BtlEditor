@@ -41,6 +41,8 @@ namespace BtlCore.Scripting
     public sealed partial class ScriptHost
     {
         Script _script;
+        FrontPath _paths;
+        FrontPath Paths => _paths ??= new(Document.Context);
         readonly Dictionary<string, ActionRec> _actions = new Dictionary<string, ActionRec>(StringComparer.Ordinal);
         readonly Dictionary<string, Kept> _kept = new Dictionary<string, Kept>(StringComparer.Ordinal);
         readonly Dictionary<string, DynValue> _resolvers = new Dictionary<string, DynValue>(StringComparer.Ordinal);
@@ -62,7 +64,7 @@ namespace BtlCore.Scripting
         }
 
         public BtlFrontDocument Document { get; private set; }
-        public int UndoFrames { get; private set; }
+        public int UndoFrames => Document?.Editing.CommitCount ?? 0;
 
         static ScriptHost()
         {
@@ -128,9 +130,12 @@ namespace BtlCore.Scripting
 
         public void Load(BtlFrontDocument doc)
         {
+            EnsureIdle();
             if (_readDepth != 0 && !ReferenceEquals(Document, doc))
                 throw new InvalidOperationException("读取期间不能更换文档");
-            if (!ReferenceEquals(Document, doc)) _epoch++;
+            if (Document?.Editing.IsEditing == true && !ReferenceEquals(Document, doc))
+                throw new InvalidOperationException("事务期间不能更换文档");
+            if (!ReferenceEquals(Document, doc)) { _epoch++; _paths = null; }
             Document = doc ?? throw new ArgumentNullException(nameof(doc));
         }
 
@@ -165,7 +170,7 @@ namespace BtlCore.Scripting
             return result;
         }
 
-        public void Run(string name, ScriptArgs args)
+        public void Run(string name, ScriptArgs args, bool recordHistory = true)
         {
             if (!_actions.TryGetValue(name, out var act))
                 throw new InvalidOperationException("未登记：" + name);
@@ -177,7 +182,7 @@ namespace BtlCore.Scripting
                 _allowWrite = true;
                 try { Invoke(fn, MakeCtx(args)); FlushGameOperation(); }
                 finally { _allowWrite = false; }
-            }, commitUndo: true, operation: "动作 " + name);
+            }, commitUndo: recordHistory, operation: "动作 " + name);
         }
 
         public bool CanRun(string name) =>
@@ -187,7 +192,7 @@ namespace BtlCore.Scripting
             _actions.TryGetValue(name, out var get) && get.Get != null;
 
         public int Count(string path) =>
-            NsPath.IsNs(path) ? NsPath.Count(Document, path) : FrontPath.Count(Document, path);
+            NsPath.IsNs(path) ? NsPath.Count(Document, path) : Paths.Count(Document, path);
 
         public object ReadBind(string sectionBind, string fieldBind, int? index, int? cell, string widget, int? shift, int? width) =>
             LayoutRead.Value(Document, sectionBind, fieldBind, index, cell, widget, shift, width);
@@ -211,18 +216,18 @@ namespace BtlCore.Scripting
 
         public object GetAtField(string vectorPath, int index, string field)
         {
-            object item = FrontPath.At(Document, vectorPath, index, out string elemType);
+            object item = Paths.At(Document, vectorPath, index, out string elemType);
             if (item is not BtlTable tbl) return null;
-            return FrontPath.GetScalar(tbl, elemType, field);
+            return Paths.GetScalar(tbl, elemType, field);
         }
 
-        public object BindGet(string path) => FrontPath.GetScalar(Document, path);
+        public object BindGet(string path) => Paths.GetScalar(Document, path);
 
         public BtlNode ReadNode(string path) => NsPath.NodeAt(Document, path);
 
         public void BindSet(string path, object value)
         {
-            Transact(() => FrontPath.SetScalar(Document, path, value), commitUndo: true);
+            Transact(() => Paths.SetScalar(Document, path, value), commitUndo: true);
         }
 
         void Transact(Action act, bool commitUndo, string operation = "绑定写入")
@@ -231,33 +236,36 @@ namespace BtlCore.Scripting
             if (_readDepth != 0) throw new FrontEditException("读取期间不能提交修改");
             if (Document?.Root == null)
                 throw new FrontEditException("路径无法定位");
-            var before = BtlFrontJson.CloneDocument(Document);
-            SnapshotCount++;
-            var keptBefore = new Dictionary<string, Kept>(_kept, StringComparer.Ordinal);
-            var stateBefore = (System.Text.Json.Nodes.JsonObject)_state.DeepClone();
-            StartBudget();
             _epoch++;
             ResetGameOperation();
+            var fieldUses = _fieldUses = new HashSet<string>(StringComparer.Ordinal);
             try
             {
-                act();
-                FlushGameOperation();
-                if (commitUndo && !BtlFrontJson.ContentEquals(Document, before))
-                    UndoFrames++;
+                Document.Editing.Execute(() =>
+                {
+                    Document.Editing.BeforeCommit(() => RecordFieldUses(fieldUses));
+                    Document.Editing.Enlist(this, () =>
+                    {
+                        var keptBefore = new Dictionary<string, Kept>(_kept, StringComparer.Ordinal);
+                        var stateBefore = (System.Text.Json.Nodes.JsonObject)_state.DeepClone();
+                        return () =>
+                        {
+                            _kept.Clear();
+                            foreach (var pair in keptBefore) _kept.Add(pair.Key, pair.Value);
+                            _state = stateBefore;
+                            _allowWrite = false;
+                            RecoverRuntime();
+                        };
+                    });
+                    StartBudget();
+                    act();
+                    FlushGameOperation();
+                }, recordHistory: commitUndo);
             }
-            catch (Exception ex)
-            {
-                Document.Root = before.Root;
-                Document.FormatVersion = before.FormatVersion;
-                _kept.Clear();
-                foreach (var pair in keptBefore) _kept.Add(pair.Key, pair.Value);
-                _state = stateBefore;
-                _allowWrite = false;
-                RecoverRuntime();
-                throw Describe(operation, ex);
-            }
+            catch (Exception ex) { throw Describe(operation, ex); }
             finally
             {
+                _fieldUses = null;
                 _epoch++;
                 _allowWrite = false;
                 _running = false;
@@ -296,18 +304,18 @@ namespace BtlCore.Scripting
             return DynValue.NewTable(ctx);
         }
 
-        static DynValue RowPath(ScriptArgs args)
+        DynValue RowPath(ScriptArgs args)
         {
             if (args == null || string.IsNullOrEmpty(args.ObjectPath) || args.ObjectIndex == null)
                 return DynValue.Nil;
-            return DynValue.NewString(FrontPath.IndexedRow(args.ObjectPath, args.ObjectIndex.Value));
+            return DynValue.NewString(Paths.IndexedRow(args.ObjectPath, args.ObjectIndex.Value));
         }
 
         DynValue ResolveObject(ScriptArgs args)
         {
             if (args != null && !string.IsNullOrEmpty(args.ObjectPath) && args.ObjectIndex != null)
             {
-                object item = FrontPath.At(Document, args.ObjectPath, args.ObjectIndex.Value, out string elemType);
+                object item = Paths.At(Document, args.ObjectPath, args.ObjectIndex.Value, out string elemType);
                 if (item is not BtlTable tbl)
                     return ToDyn(item);
                 return UserData.Create(new ScriptHandle { Epoch = _epoch, Table = tbl, TypeName = elemType });
@@ -375,7 +383,7 @@ namespace BtlCore.Scripting
         DynValue OnRoot(ScriptExecutionContext ctx, CallbackArguments args)
         {
             if (Document?.Root == null) return DynValue.Nil;
-            return UserData.Create(new ScriptHandle { Epoch = _epoch, Table = Document.Root, TypeName = BtlCore.Fb.SoftSchema.RootType });
+            return UserData.Create(new ScriptHandle { Epoch = _epoch, Table = Document.Root, TypeName = Document.Context.RootType });
         }
 
         DynValue OnField(ScriptExecutionContext ctx, CallbackArguments args)
@@ -399,9 +407,9 @@ namespace BtlCore.Scripting
             if (args.Count >= 2 && args[0].Type == DataType.UserData)
             {
                 var h = Unwrap(args[0]);
-                return ToDyn(FrontPath.GetScalar(h.Table, h.TypeName, ArgString(args, 1)));
+                return ToDyn(Paths.GetScalar(h.Table, h.TypeName, ArgString(args, 1)));
             }
-            return ToDyn(FrontPath.GetScalar(Document, ArgString(args, 0)));
+            return ToDyn(Paths.GetScalar(Document, ArgString(args, 0)));
         }
 
         DynValue OnSet(ScriptExecutionContext ctx, CallbackArguments args)
@@ -426,10 +434,10 @@ namespace BtlCore.Scripting
             if (args.Count >= 3 && args[0].Type == DataType.UserData)
             {
                 var h = Unwrap(args[0]);
-                FrontPath.SetScalar(h.Table, h.TypeName, ArgString(args, 1), FromDyn(args[2]));
+                Paths.SetScalar(h.Table, h.TypeName, ArgString(args, 1), FromDyn(args[2]));
                 return DynValue.Nil;
             }
-            FrontPath.SetScalar(Document, ArgString(args, 0), FromDyn(args[1]));
+            Paths.SetScalar(Document, ArgString(args, 0), FromDyn(args[1]));
             return DynValue.Nil;
         }
 
@@ -453,10 +461,10 @@ namespace BtlCore.Scripting
             {
                 var h = Unwrap(args[0]);
                 if (h.Table == null) throw new FrontEditException("路径无法定位");
-                FrontPath.Ensure(h.Table, h.TypeName, ArgString(args, 1));
+                Paths.Ensure(h.Table, h.TypeName, ArgString(args, 1));
                 return DynValue.Nil;
             }
-            FrontPath.Ensure(Document, ArgString(args, 0));
+            Paths.Ensure(Document, ArgString(args, 0));
             return DynValue.Nil;
         }
 
@@ -483,7 +491,7 @@ namespace BtlCore.Scripting
                 }
                 if (args.Count >= 2 && args[1].Type == DataType.UserData)
                     return Attach(path, -1, Unwrap(args[1]));
-                return WrapNew(path, FrontPath.AppendEmpty(Document, path));
+                return WrapNew(path, Paths.AppendEmpty(Document, path));
             }
             finally { _vectorIndices.Clear(); }
         }
@@ -509,7 +517,7 @@ namespace BtlCore.Scripting
                 int end = vec.V.Count;
                 if (index < 0 || index > end)
                     throw new FrontEditException("下标越界");
-                object created = FrontPath.AppendEmpty(Document, path);
+                object created = Paths.AppendEmpty(Document, path);
                 if (end != index)
                 {
                     FrontEdit.RemoveAt(vec, end);
@@ -546,7 +554,7 @@ namespace BtlCore.Scripting
                     NsPath.Remove(Document, path, index);
                     return DynValue.Nil;
                 }
-                FrontPath.Remove(Document, path, AsIndex(args[1]));
+                Paths.Remove(Document, path, AsIndex(args[1]));
                 return DynValue.Nil;
             }
             finally { _vectorIndices.Clear(); }
@@ -555,7 +563,7 @@ namespace BtlCore.Scripting
         DynValue OnCount(ScriptExecutionContext ctx, CallbackArguments args)
         {
             string path = ArgString(args, 0);
-            int n = NsPath.IsNs(path) ? NsPath.Count(Document, path) : FrontPath.Count(Document, path);
+            int n = NsPath.IsNs(path) ? NsPath.Count(Document, path) : Paths.Count(Document, path);
             return DynValue.NewNumber(n);
         }
 
@@ -572,7 +580,7 @@ namespace BtlCore.Scripting
                     return UserData.Create(new ScriptHandle { Epoch = _epoch, Struct = elem });
                 return ToDyn(node is BtlScalar sc ? sc.V : null);
             }
-            object item = FrontPath.At(Document, path, index, out string elemType, out var vector);
+            object item = Paths.At(Document, path, index, out string elemType, out var vector);
             if (item is BtlTable tbl)
                 return UserData.Create(new ScriptHandle { Epoch = _epoch, Table = tbl, TypeName = elemType, Owner = vector });
             if (item is BtlStruct st)
@@ -595,11 +603,11 @@ namespace BtlCore.Scripting
                 var h = Unwrap(args[0]);
                 string path = ArgString(args, 1);
                 if (h.Table != null)
-                    return ToDyn(FrontPath.GetMemberOnTable(h.Table, h.TypeName, path));
+                    return ToDyn(Paths.GetMemberOnTable(h.Table, h.TypeName, path));
                 if (h.Struct == null) throw new FrontEditException("路径无法定位");
-                return ToDyn(FrontPath.ReadStructMember(h.Struct, h.TypeName, path));
+                return ToDyn(Paths.ReadStructMember(h.Struct, h.TypeName, path));
             }
-            return ToDyn(FrontPath.GetMember(Document, ArgString(args, 0)));
+            return ToDyn(Paths.GetMember(Document, ArgString(args, 0)));
         }
 
         DynValue OnSlot(ScriptExecutionContext ctx, CallbackArguments args)
@@ -700,14 +708,14 @@ namespace BtlCore.Scripting
                 string path = ArgString(args, 1);
                 object value = FromDyn(args[2]);
                 if (h.Table != null)
-                    FrontPath.SetMemberOnTable(h.Table, h.TypeName, path, value);
+                    Paths.SetMemberOnTable(h.Table, h.TypeName, path, value);
                 else if (h.Struct != null)
-                    FrontPath.SetStructMember(h.Struct, h.TypeName, path, value);
+                    Paths.SetStructMember(h.Struct, h.TypeName, path, value);
                 else
                     throw new FrontEditException("路径无法定位");
                 return DynValue.Nil;
             }
-            FrontPath.SetMember(Document, ArgString(args, 0), FromDyn(args[1]));
+            Paths.SetMember(Document, ArgString(args, 0), FromDyn(args[1]));
             return DynValue.Nil;
         }
 
@@ -722,11 +730,11 @@ namespace BtlCore.Scripting
                 if (args[2].Type == DataType.UserData)
                 {
                     var h = Unwrap(args[2]);
-                    FrontPath.SetAtNode(Document, path, index, NodeOf(h));
+                    Paths.SetAtNode(Document, path, index, NodeOf(h));
                     h.Owner = VectorOf(path);
                     return DynValue.Nil;
                 }
-                FrontPath.SetAt(Document, path, index, FromDyn(args[2]));
+                Paths.SetAt(Document, path, index, FromDyn(args[2]));
                 return DynValue.Nil;
             }
             finally { _vectorIndices.Clear(); }
@@ -741,9 +749,9 @@ namespace BtlCore.Scripting
                 return UserData.Create(new ScriptHandle { Epoch = _epoch, Struct = laid });
             }
             string name = ArgString(args, 0);
-            if (!BtlCore.Fb.SoftSchema.TryStructMembers(name, out _))
+            if (!Document.Context.TryStructMembers(name, out _))
                 throw new FrontEditException("路径无法定位");
-            var st = FrontEdit.StructFromFbs(name);
+            var st = FrontEdit.StructFromFbs(Document.Context, name);
             return UserData.Create(new ScriptHandle { Epoch = _epoch, Struct = st, TypeName = name });
         }
 
@@ -763,10 +771,10 @@ namespace BtlCore.Scripting
                 {
                     var h = Unwrap(args[0]);
                     if (h.Table == null) throw new FrontEditException("路径无法定位");
-                    FrontPath.Fill(h.Table, h.TypeName, ArgString(args, 1), values);
+                    Paths.Fill(h.Table, h.TypeName, ArgString(args, 1), values);
                     return DynValue.Nil;
                 }
-                FrontPath.Fill(Document, ArgString(args, 0), values);
+                Paths.Fill(Document, ArgString(args, 0), values);
                 return DynValue.Nil;
             }
             finally { _vectorIndices.Clear(); }
@@ -872,18 +880,18 @@ namespace BtlCore.Scripting
             var vec = VectorOf(path);
             if (created is BtlTable tbl)
             {
-                string elemType = FrontPath.ElementType(Document, path);
+                string elemType = Paths.ElementType(Document, path);
                 return UserData.Create(new ScriptHandle { Epoch = _epoch, Table = tbl, TypeName = elemType, Owner = vec });
             }
             if (created is BtlStruct st)
             {
-                string elemType = FrontPath.ElementType(Document, path);
+                string elemType = Paths.ElementType(Document, path);
                 return UserData.Create(new ScriptHandle { Epoch = _epoch, Struct = st, TypeName = elemType, Owner = vec });
             }
             return DynValue.Nil;
         }
 
-        BtlVector VectorOf(string path) => FrontPath.GetVector(Document, path, create: true);
+        BtlVector VectorOf(string path) => Paths.GetVector(Document, path, create: true);
 
         static BtlNode NodeOf(ScriptHandle handle)
         {

@@ -76,7 +76,7 @@ public class CountryBtParityTests
                 ("btid", 7), ("id", null), ("name", "  甲  "), ("agent", "  "), ("class", "bt"),
                 ("path", new object[] { 0, 0 }),
                 ("node_id", null), ("node_class", "   "), ("method", " go "),
-                ("params", new object[] { 1, 2 }), ("rounds", Array.Empty<object>()),
+                ("params", new object[] { 1, 2 }), ("rounds", null),
                 ("result", null), ("count", 3))
         });
         var node = NodeAt(Tree(doc, 0), 0, 0);
@@ -96,7 +96,7 @@ public class CountryBtParityTests
                 ("params", Array.Empty<object>()), ("rounds", null),
                 ("result", null), ("count", 3))
         });
-        Assert.False(NodeAt(Tree(doc, 0), 0, 0).ContainsKey("params"));
+        Assert.Empty(Assert.IsType<JsonArray>(NodeAt(Tree(doc, 0), 0, 0)["params"]));
 
         host.Run("delete_child", new ScriptArgs { Index = 0, Input = Map(("path", null), ("index", 0)) });
         host.Run("add_tree", new ScriptArgs());

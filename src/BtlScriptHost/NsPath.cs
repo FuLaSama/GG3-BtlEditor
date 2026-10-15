@@ -34,6 +34,18 @@ namespace BtlCore.Scripting
         public static bool IsNs(string path) =>
             !string.IsNullOrEmpty(path) && path[0] == '/';
 
+        public static string CanonicalPath(string path)
+        {
+            var result = new StringBuilder();
+            foreach (var step in Parse(path))
+            {
+                result.Append(step.KindOf switch { Kind.Field => '/', Kind.Index => '[', _ => '.' });
+                result.Append(step.N.ToString(CultureInfo.InvariantCulture));
+                if (step.KindOf == Kind.Index) result.Append(']');
+            }
+            return result.ToString();
+        }
+
         public static object Get(BtlFrontDocument doc, string path)
         {
             var leaf = Walk(doc, path, create: false, scalarType: null, out _);

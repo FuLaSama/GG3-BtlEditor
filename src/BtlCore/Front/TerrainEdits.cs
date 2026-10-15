@@ -65,7 +65,21 @@ namespace BtlCore.Front
             return cells;
         }
 
-        /// <summary>与 SyncGrid 里重写 tiles / attributes 的那一段相同。不碰部队和事件。</summary>
+        /// <summary>只修改指定格子的地质变种位，不重建地形、属性或实体向量。</summary>
+        public static void SetVariant(BtlFrontDocument doc, int index, int variant)
+        {
+            if (variant is < 0 or > 31) throw new FrontEditException("地质变种必须在 0 到 31 之间。");
+            if (doc?.Root?.F.GetValueOrDefault(1) is not BtlTable map
+                || map.F.GetValueOrDefault(0) is not BtlStruct size
+                || index < 0 || index >= (long)U16(size, 0) * U16(size, 1))
+                throw new FrontEditException("地块索引超出地图范围。");
+            var tiles = FrontEdit.EnsureVec(map, 2, "u16");
+            while (tiles.V.Count <= index) tiles.V.Add((ushort)9001);
+            ushort terrain = (ushort)AsLong(tiles.V[index]);
+            FrontEdit.SetAt(tiles, index, (ushort)((terrain & ~0xF8) | (variant << 3)));
+        }
+
+        /// <summary>显式重建 tiles / attributes。不碰部队和事件；局部编辑应直接修改目标字段。</summary>
         public static void Store(BtlFrontDocument doc, IReadOnlyList<Cell> cells)
         {
             if (doc?.Root == null || cells == null || cells.Count == 0) return;
@@ -82,6 +96,41 @@ namespace BtlCore.Front
                 if ((flags & 8) != 0) attrs.V.Add(cell.Main ?? NewAttr(0, 0, 0, 0));
                 if ((flags & 16) != 0) attrs.V.Add(cell.Secondary ?? NewAttr(0, 0, 0, 0));
             }
+        }
+
+        /// <summary>按坐标搬运地形，并保留完整属性及未关联尾部；实体重映射规则由调用方处理。</summary>
+        public static void Resize(BtlFrontDocument doc, int left, int up, int width, int height)
+        {
+            if (width is < 1 or > 500 || height is < 1 or > 500)
+                throw new FrontEditException("地图宽高必须在 1 到 500 之间。");
+            if (doc?.Root?.F.GetValueOrDefault(1) is not BtlTable map
+                || map.F.GetValueOrDefault(0) is not BtlStruct size)
+                throw new FrontEditException("地图缺少尺寸结构。");
+            int oldWidth = U16(size, 0), oldHeight = U16(size, 1);
+            if (oldWidth <= 0 || oldHeight <= 0 || (long)oldWidth * oldHeight > 1_000_000)
+                throw new FrontEditException("原地图尺寸无效或超过预算。");
+            if (size.Layout.Count == 0 && size.V.Count > 6)
+                throw new FrontEditException("地图尺寸结构包含类型未知的额外成员。");
+            var cells = Project(doc);
+            int used = cells.Sum(c => ((c.Terrain & 1024) != 0 ? 1 : 0)
+                + ((c.Terrain & 2048) != 0 ? 1 : 0) + ((c.Terrain & 4096) != 0 ? 1 : 0));
+            var extras = map.F.GetValueOrDefault(3) is BtlVector attributes
+                ? attributes.V.Skip(used).ToArray() : Array.Empty<object>();
+            var resized = new List<Cell>(width * height);
+            for (int y = 0; y < height; y++)
+                for (int x = 0; x < width; x++)
+                {
+                    long oldX = (long)x - left, oldY = (long)y - up;
+                    resized.Add(oldX >= 0 && oldX < oldWidth && oldY >= 0 && oldY < oldHeight
+                        ? cells[(int)oldY * oldWidth + (int)oldX] : new Cell());
+                }
+            size = FrontEdit.EnsureStruct(map, 0, new[] { "u16", "u16", "u16", "u16", "u16", "u16" });
+            FrontEdit.SetMember(size, 0, (ushort)width);
+            FrontEdit.SetMember(size, 1, (ushort)height);
+            FrontEdit.SetMember(size, 4, (ushort)Math.Min(U16(size, 4), Math.Max(0, width - U16(size, 2))));
+            FrontEdit.SetMember(size, 5, (ushort)Math.Min(U16(size, 5), Math.Max(0, height - U16(size, 3))));
+            Store(doc, resized);
+            ((BtlVector)map.F[3]).V.AddRange(extras);
         }
 
         public static bool HasContent(Cell cell, string layer)

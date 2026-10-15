@@ -12,10 +12,12 @@ namespace BtlCore.Front
     public static class UnitEdits
     {
         public static BtlTable Create(ushort cellIdx, ushort faction, ushort agentId, ushort unitId,
-            ushort stack, ushort val5, ushort hp, ushort maxHp)
+            ushort stack, ushort val5, ushort hp, ushort maxHp, BtlCore.Fb.SchemaContext context = null)
         {
             var tbl = BtlFrontJson.NewTable();
-            tbl.F[0] = FrontEdit.StructFromFbs("AgentInfo", cellIdx, faction, agentId, unitId, stack, val5, hp, maxHp);
+            context ??= BtlCore.Fb.SoftSchema.DefaultContext;
+            object cell=context.TryStructMembers("AgentInfo",out var members) && members[0].T=="i16" ? (object)unchecked((short)cellIdx) : cellIdx;
+            tbl.F[0] = FrontEdit.StructFromFbs(context,"AgentInfo", cell, faction, agentId, unitId, stack, val5, hp, maxHp);
             return tbl;
         }
 
@@ -48,14 +50,14 @@ namespace BtlCore.Front
             {
                 var unit = unitByCell[i];
                 if (unit == null) continue;
-                SetU16(unit, 0, (ushort)i);
+                SetU16(unit, 0, (ushort)i, doc.Context);
                 onGrid.Add(unit);
             }
             foreach (var item in vec.V.ToList())
             {
                 if (item is not BtlTable agent) continue;
                 bool keep = onGrid.Contains(agent);
-                bool offMap = CellIndex(agent) >= total;
+                bool offMap = CellIndex(agent)<0 || CellIndex(agent) >= total;
                 if (keep || offMap)
                 {
                     ordered.Add(agent);
@@ -84,24 +86,24 @@ namespace BtlCore.Front
             catch { return 0; }
         }
 
-        static void SetU16(BtlTable agent, int member, ushort? value)
+        static void SetU16(BtlTable agent, int member, ushort? value, BtlCore.Fb.SchemaContext context)
         {
-            var st = EnsureAgentInfo(agent);
+            var st = EnsureAgentInfo(agent, context);
             FrontEdit.SetMember(st, member, value ?? (ushort)0);
         }
 
-        static BtlStruct EnsureAgentInfo(BtlTable agent)
+        static BtlStruct EnsureAgentInfo(BtlTable agent, BtlCore.Fb.SchemaContext context)
         {
             if (agent.F.TryGetValue(0, out var node) && node is BtlStruct st)
             {
-                if (BtlCore.Fb.SoftSchema.TryStructMembers("AgentInfo", out var members))
+                if (context.TryStructMembers("AgentInfo", out var members))
                 {
                     while (st.V.Count < members.Length)
                         st.V.Add(BtlCore.Fb.SoftSchema.DefaultValue(members[st.V.Count].T));
                 }
                 return st;
             }
-            st = FrontEdit.StructFromFbs("AgentInfo");
+            st = FrontEdit.StructFromFbs(context, "AgentInfo");
             FrontEdit.SetField(agent, 0, st);
             return st;
         }

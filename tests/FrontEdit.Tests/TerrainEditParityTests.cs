@@ -35,8 +35,6 @@ public class TerrainEditParityTests
         var host = new ScriptHost();
         host.Load(doc);
         EditorScripts.Load(host,
-            "terrain/装饰.lua",
-            "terrain/次地形.lua",
             "terrain/主地形.lua",
             "terrain/地质.lua",
             "terrain/地形粘贴.lua");
@@ -48,6 +46,28 @@ public class TerrainEditParityTests
         var d = new Dictionary<string, object>();
         foreach (var (key, value) in pairs) d[key] = value;
         return d;
+    }
+
+    [Fact]
+    public void Variant_edit_preserves_flags_trailing_values_and_unrelated_nodes()
+    {
+        var doc = Sample();
+        var map = (BtlTable)doc.Root.F[1];
+        var attrs = (BtlVector)map.F[3];
+        var tiles = (BtlVector)map.F[2];
+        attrs.V.Add(Attr(99, 7, -8, 6));
+        tiles.V.Add((ushort)54321);
+        var expected = BtlFrontJson.CloneDocument(doc);
+        ((BtlVector)((BtlTable)expected.Root.F[1]).F[2]).V[1] = (ushort)(1536 | (19 << 3));
+        doc.Editing.Execute(() => TerrainEdits.SetVariant(doc, 1, 19));
+        Assert.True(BtlFrontJson.ContentEquals(expected, doc));
+        Assert.Same(attrs, ((BtlTable)doc.Root.F[1]).F[3]);
+        Assert.True(doc.Editing.Undo());
+        Assert.Equal((ushort)1536, ((BtlVector)((BtlTable)doc.Root.F[1]).F[2]).V[1]);
+        string before = BtlFrontJson.Serialize(doc);
+        Assert.Throws<FrontEditException>(() => doc.Editing.Execute(() => TerrainEdits.SetVariant(doc, 4, 1)));
+        Assert.Throws<FrontEditException>(() => doc.Editing.Execute(() => TerrainEdits.SetVariant(doc, 1, 32)));
+        Assert.Equal(before, BtlFrontJson.Serialize(doc));
     }
 
     [Fact]

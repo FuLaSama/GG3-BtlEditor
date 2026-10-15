@@ -26,17 +26,20 @@ namespace BtlCore.Fb
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
         };
 
-        public static string ToNamed(BtlFrontDocument doc, FbsSchema schema) =>
+        public static string ToNamed(BtlFrontDocument doc, FbsSchema schema = null) =>
             WriteDocument(doc, schema, named: true);
 
-        public static string ToFieldIds(BtlFrontDocument doc, FbsSchema schema) =>
+        public static string ToFieldIds(BtlFrontDocument doc, FbsSchema schema = null) =>
             WriteDocument(doc, schema, named: false);
 
-        public static BtlFrontDocument LoadFile(string path, FbsSchema schema = null, List<string> notes = null) =>
-            LoadJson(File.ReadAllText(path), schema, notes);
+        public static BtlFrontDocument LoadFile(string path, FbsSchema schema = null, List<string> notes = null, SchemaContext context = null) =>
+            LoadJson(File.ReadAllText(path), schema, notes, context);
 
-        public static BtlFrontDocument LoadJson(string json, FbsSchema schema = null, List<string> notes = null)
+        public static BtlFrontDocument LoadJson(string json, FbsSchema schema = null, List<string> notes = null, SchemaContext context = null)
         {
+            if (context != null && schema != null && !ReferenceEquals(context.Schema, schema))
+                throw new ArgumentException("schema 与 context 必须属于同一份解释。");
+            context ??= schema == null ? SoftSchema.DefaultContext : new SchemaContext(schema);
             notes ??= new List<string>();
             var node = JsonNode.Parse(json, documentOptions: new JsonDocumentOptions { MaxDepth = 1024 });
             if (node is not JsonObject obj)
@@ -44,13 +47,13 @@ namespace BtlCore.Fb
 
             string format = obj["format"]?.GetValue<string>();
             if (string.Equals(format, "btlfront", StringComparison.OrdinalIgnoreCase))
-                return UnpackBehaviorTrees(BtlFrontJson.Parse(json));
+                return UnpackBehaviorTrees(BtlFrontJson.Parse(json, context));
 
-            schema ??= SoftSchema.Schema;
+            schema = context.Schema;
             if (schema == null)
                 throw new InvalidDataException("打开 JSON 需要 battle.fbs");
 
-            return UnpackBehaviorTrees(SchemaDumpToFront.ToFront(obj, schema, notes));
+            return UnpackBehaviorTrees(SchemaDumpToFront.ToFront(obj, schema, notes, context));
         }
 
         // JSON 导入也应与 BTL 读取一致：四字节空头是零棵树，原始打包
@@ -65,6 +68,7 @@ namespace BtlCore.Fb
         static string WriteDocument(BtlFrontDocument doc, FbsSchema schema, bool named)
         {
             if (doc?.Root == null) throw new ArgumentNullException(nameof(doc));
+            schema ??= doc.Context.Schema;
             if (schema == null) throw new ArgumentNullException(nameof(schema));
             var root = WriteTable(doc.Root, schema.RootType, schema, named);
             return root.ToJsonString(JsonOpts);

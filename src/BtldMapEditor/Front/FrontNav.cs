@@ -11,7 +11,7 @@
  *   - 新建 AgentInfo / Size / TileAttr 等 struct 的成员个数和类型跟 fbs 走。
  *
  * MapCell 是画布工作视图：Terrain 存在格子上，Unit/建筑是 Document 里同一张表的引用。
- * 保存前必须 SyncGrid，把格子上的地形、部队、建筑收进向量。
+ * 编辑器从文档单向投影；修改通过公共事务提交，保存直接读取文档。
  */
 using System.Globalization;
 using BtlCore.Fb;
@@ -389,7 +389,7 @@ namespace BtldMapEditor.Front
         }
 
         /// <summary>
-        /// 保存前三步：tiles/attrs 按格子重写；在格部队写回 cell_idx 并保留离图部队；
+        /// 旧调用方的显式兼容转换，编辑器不再调用。tiles/attrs 按格子重写；在格部队写回 cell_idx 并保留离图部队；
         /// 建筑/工事事件写回格子索引，脚本事件（没有 3/4 子表）原样保留。
         /// </summary>
         public static void SyncGrid(BtlFrontDocument doc, IList<MapCell> cells)
@@ -473,7 +473,7 @@ namespace BtldMapEditor.Front
 
     /// <summary>
     /// 格子工作视图（不属于 BtlFront 文档本身）。
-    /// Terrain 暂存在这里直到 SyncGrid；Unit / 建筑表是 Document 里的同一引用。
+    /// Terrain 是显示用副本；节点仍引用文档，消费方只读。编辑应在事务中修改文档后重新投影。
     /// </summary>
     public sealed class MapCell
     {

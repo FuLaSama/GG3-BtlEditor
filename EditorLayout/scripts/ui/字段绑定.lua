@@ -5,6 +5,14 @@ local function selected(ctx)
   return game.map.cell_at_index(ctx.cell_index)
 end
 editor.resolve("cell",function(ctx) return selected(ctx) and ctx.cell_index or nil end)
+editor.resolve("event",function(ctx) return game.events.index_at_cell(ctx.cell_index) end)
+-- 地块附加记录不限于建筑/工事；空地的起火等配置也放在这里。
+-- 打开详情不写入，仅首次明确修改时创建最小记录。
+editor.action("ensure_cell_event",function(ctx)
+  local cell=selected(ctx)
+  if not cell then error("请先在地图上选择有效地块") end
+  if game.events.index_at_cell(cell.index)==nil then game.events.create {cell_index=cell.index} end
+end)
 local function object_action(name,object,property)
   editor.action(name,{
     get=function() return object[property] end,

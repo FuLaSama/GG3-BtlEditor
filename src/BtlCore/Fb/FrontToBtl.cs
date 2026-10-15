@@ -47,7 +47,9 @@ namespace BtlCore.Fb
 
             try
             {
-                var w = new Writer(result.Issues);
+                if (doc.HasUnresolvedData)
+                    throw new InvalidDataException("文档包含未解析的源数据，不能重建导出。");
+                var w = new Writer(result.Issues, doc.Context);
                 result.Bytes = w.Build(doc.Root);
             }
             catch (Exception ex)
@@ -81,17 +83,19 @@ namespace BtlCore.Fb
             readonly FbBuilder _b = new FbBuilder(4096);
             readonly List<ConvertIssue> _issues;
 
-            public Writer(List<ConvertIssue> issues) => _issues = issues;
+            readonly SchemaContext _context;
+            public Writer(List<ConvertIssue> issues, SchemaContext context)
+            { _issues = issues; _context = context; }
 
             public byte[] Build(BtlTable root)
             {
-                int off = WriteTable(root, SoftSchema.RootType, "/");
+                int off = WriteTable(root, _context.RootType, "/");
                 _b.Finish(off);
                 return _b.SizedByteArray();
             }
 
             void Warn(string path, string msg) =>
-                _issues.Add(new ConvertIssue { Severity = IssueSeverity.Warning, Path = path, Message = msg });
+                _issues.Add(new ConvertIssue { Code = "lossy_write", Severity = IssueSeverity.Error, Path = path, Message = msg });
 
             void Info(string path, string msg) =>
                 _issues.Add(new ConvertIssue { Severity = IssueSeverity.Info, Path = path, Message = msg });
@@ -135,7 +139,7 @@ namespace BtlCore.Fb
                     if (!fields.TryGetValue(fid, out var node) || node == null)
                         continue;
 
-                    SoftSchema.TryGet(context, fid, out FieldHint hint);
+                    _context.TryGet(context, fid, out FieldHint hint);
                     string fp = path == "/" ? "/" + fid : path + "/" + fid;
                     node = CoerceNode(node, hint, fp);
                     if (node == null)
@@ -167,7 +171,7 @@ namespace BtlCore.Fb
                     if (!fields.TryGetValue(fid, out var node) || node == null)
                         continue;
 
-                    SoftSchema.TryGet(context, fid, out FieldHint hint);
+                    _context.TryGet(context, fid, out FieldHint hint);
                     string fp = path == "/" ? "/" + fid : path + "/" + fid;
 
                     if (childOff.TryGetValue(fid, out int abs))
@@ -276,13 +280,8 @@ namespace BtlCore.Fb
                     return _b.CreateByteVector(packed);
                 }
 
-                if (!string.IsNullOrEmpty(vec.Enc) &&
-                    vec.V.Count > 0 &&
-                    !IsNumericLike(vec.V[0]))
-                {
-                    Warn(path, $"enc={vec.Enc} 无法打包，写出空行为树头");
-                    return _b.CreateByteVector(PackedJsonStream.EmptyHeader);
-                }
+                if (!string.IsNullOrEmpty(vec.Enc))
+                    throw new InvalidDataException($"{path}: 不支持的载荷编码 {vec.Enc}，不能丢弃内容后导出");
 
                 if (elem == "table")
                 {
@@ -378,7 +377,7 @@ namespace BtlCore.Fb
                     return;
                 }
 
-                Info(path, $"struct 无 fbs 布局，按 u8×{st.V.Count} 写出");
+                Warn(path, $"struct 无 fbs 布局，不能确认 u8×{st.V.Count} 编码");
                 _b.Prep(1, st.V.Count);
                 for (int i = st.V.Count - 1; i >= 0; i--)
                     PutScalar("u8", st.V[i], path);

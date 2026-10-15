@@ -1,4 +1,5 @@
 -- 页面的空值规则与局部修改工具不同：基础 struct 的空输入写为 0。
+local forms=assert(editor.modules.unit_forms,"需要先加载 unit/配置表单.lua")
 editor.resolve("unit",function(ctx) return game.units.index_at_cell(ctx.cell_index) end)
 local function write(unit,input,cell)
   if cell~=nil then unit.cell_index=cell end
@@ -11,7 +12,7 @@ end
 editor.action("apply_unit",function(ctx)
   local unit=game.units.get(ctx.index); if not unit then return end
   write(unit,ctx.input)
-  write_unit_behavior(unit.index,ctx.input); write_unit_general(unit.index,ctx.input); write_unit_ex(unit.index,ctx.input)
+  forms.write_all(unit,ctx.input)
 end)
 editor.action("place_unit",function(ctx)
   local input=ctx.input or {}; local cell=ctx.cell_index or input.cell

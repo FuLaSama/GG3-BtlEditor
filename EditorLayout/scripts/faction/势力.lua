@@ -15,5 +15,4 @@ editor.action("apply_faction",function(ctx)
 end)
 editor.action("add_faction",function() game.factions.create() end)
 editor.action("delete_faction",function(ctx) game.factions.remove(ctx.index) end)
-function move_faction_rows(from,to) game.factions.move(from,to) end
 editor.action("move_faction",function(ctx) game.factions.move(ctx.input.from,ctx.input.to) end)

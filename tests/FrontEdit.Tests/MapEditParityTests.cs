@@ -111,7 +111,7 @@ public class MapEditParityTests
         Assert.Equal((ushort)4, ((BtlScalar)((BtlTable)events.V[3]).F[0]).V);
         var points = (BtlVector)((BtlTable)doc.Root.F[3]).F[1];
         Assert.Single(points.V);
-        Assert.Equal((ushort)1, ((BtlScalar)((BtlTable)points.V[0]).F[0]).V);
+        Assert.Equal((short)1, ((BtlScalar)((BtlTable)points.V[0]).F[0]).V);
 
         string packed = BtlFrontJson.Serialize(doc);
         Resync(doc);

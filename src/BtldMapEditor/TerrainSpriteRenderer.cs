@@ -77,6 +77,9 @@ namespace BtldMapEditor
         Bitmap _bitmap;
         int _originX, _originY, _sampleStep = 1;
         IReadOnlyList<TerrainCell> _sceneCells;
+        DecodedTerrainMap _regionSource;
+        Rectangle _renderedRegion;
+        bool _regionBuildings,_regionForts,_lastWasRegion;
 
         // 装饰/建筑会画出格子外，脏区四周要留足余量。
         int _spriteInfluencePixels = 560;
@@ -171,6 +174,7 @@ namespace BtldMapEditor
         /// <summary>清空缓冲后画整张图。</summary>
         public void RenderFull(DecodedTerrainMap decoded, bool showBuildings, bool showForts)
         {
+            _lastWasRegion=false;_regionSource=null;
             _originX = _originY = 0;
             _sampleStep = 1;
             int cw = TerrainGeometry.CanvasWidth(decoded.Width);
@@ -183,21 +187,64 @@ namespace BtldMapEditor
             _buf.CopyToBitmap(_bitmap, 0, 0, cw, ch);
         }
 
-        /// <summary>只分配视野的缓冲。坐标仍使用全图坐标，缩小时只计算实际显示的采样点。</summary>
-        public Bitmap RenderRegion(DecodedTerrainMap decoded, bool showBuildings, bool showForts, Rectangle region, int sampleStep = 1)
+        /// <summary>只分配视野缓冲。reuseOverlap 仅用于同一份未修改的 decoded 快照；编辑后换快照或关闭复用。</summary>
+        public Bitmap RenderRegion(DecodedTerrainMap decoded, bool showBuildings, bool showForts, Rectangle region, int sampleStep = 1, bool reuseOverlap = false)
         {
             region.Intersect(new Rectangle(0, 0, TerrainGeometry.CanvasWidth(decoded.Width), TerrainGeometry.CanvasHeight(decoded.Height)));
             if (region.Width <= 0 || region.Height <= 0) throw new ArgumentOutOfRangeException(nameof(region));
-            _originX = region.Left; _originY = region.Top;
-            _sampleStep = Math.Max(1, sampleStep);
-            int cw = (region.Width + _sampleStep - 1) / _sampleStep;
-            int ch = (region.Height + _sampleStep - 1) / _sampleStep;
+            int step=Math.Max(1,sampleStep);
+            int cw = (region.Width + step - 1) / step;
+            int ch = (region.Height + step - 1) / step;
+            var overlap=Rectangle.Intersect(region,_renderedRegion);
+            bool reuse=reuseOverlap && _lastWasRegion && ReferenceEquals(decoded,_regionSource)
+                && showBuildings==_regionBuildings && showForts==_regionForts && step==_sampleStep
+                && _buf?.Width==cw && _buf.Height==ch && overlap.Width>0 && overlap.Height>0
+                && (region.X-_originX)%step==0 && (region.Y-_originY)%step==0;
+            int sourceX=0,sourceY=0,destX=0,destY=0,copyWidth=0,copyHeight=0;
+            if(reuse)
+            {
+                sourceX=(overlap.X-_originX)/step;sourceY=(overlap.Y-_originY)/step;
+                destX=(overlap.X-region.X)/step;destY=(overlap.Y-region.Y)/step;
+                copyWidth=(overlap.Width+step-1)/step;copyHeight=(overlap.Height+step-1)/step;
+            }
+            _originX = region.Left; _originY = region.Top;_sampleStep=step;
             EnsureBuffer(cw, ch);
-            Array.Clear(_buf.Argb);
-            Array.Clear(_occ);
-            DrawScene(decoded, showBuildings, showForts, new PixelClip(region.Left, region.Top, region.Right, region.Bottom), includeAll: false);
+            if(reuse)
+            {
+                // 同一采样网格上的重叠像素无损搬移，避免每越过缓存边界就重画整个视野。
+                int start=destY<=sourceY ? 0 : copyHeight-1;
+                int end=destY<=sourceY ? copyHeight : -1;
+                int direction=destY<=sourceY ? 1 : -1;
+                for(int row=start;row!=end;row+=direction)
+                {
+                    Array.Copy(_buf.Argb,(sourceY+row)*cw+sourceX,_buf.Argb,(destY+row)*cw+destX,copyWidth);
+                    Array.Copy(_occ,(sourceY+row)*cw+sourceX,_occ,(destY+row)*cw+destX,copyWidth);
+                }
+                DrawExposed(0,0,cw,destY);
+                DrawExposed(0,destY+copyHeight,cw,ch-destY-copyHeight);
+                DrawExposed(0,destY,destX,copyHeight);
+                DrawExposed(destX+copyWidth,destY,cw-destX-copyWidth,copyHeight);
+            }
+            else
+            {
+                Array.Clear(_buf.Argb);Array.Clear(_occ);
+                DrawScene(decoded, showBuildings, showForts, new PixelClip(region.Left, region.Top, region.Right, region.Bottom), includeAll: false);
+            }
             _buf.CopyToBitmap(_bitmap, 0, 0, cw, ch);
+            _regionSource=decoded;_renderedRegion=region;_regionBuildings=showBuildings;_regionForts=showForts;_lastWasRegion=true;
             return _bitmap;
+
+            void DrawExposed(int x,int y,int width,int height)
+            {
+                if(width<=0 || height<=0)return;
+                for(int row=y;row<y+height;row++)
+                {
+                    Array.Clear(_buf.Argb,row*cw+x,width);Array.Clear(_occ,row*cw+x,width);
+                }
+                var clip=new PixelClip(region.X+x*step,region.Y+y*step,
+                    Math.Min(region.Right,region.X+(x+width)*step),Math.Min(region.Bottom,region.Y+(y+height)*step));
+                DrawScene(decoded,showBuildings,showForts,clip,includeAll:false);
+            }
         }
 
         int FirstSample(int value, int origin) => value + ((origin - value) % _sampleStep + _sampleStep) % _sampleStep;
@@ -205,6 +252,7 @@ namespace BtldMapEditor
         /// <summary>只重画 dirtyCells 的邻域，拷回位图对应矩形。</summary>
         public void RenderDirty(DecodedTerrainMap decoded, bool showBuildings, bool showForts, IReadOnlyList<int> dirtyCells)
         {
+            _lastWasRegion=false;
             int cw = TerrainGeometry.CanvasWidth(decoded.Width);
             int ch = TerrainGeometry.CanvasHeight(decoded.Height);
             if (_originX != 0 || _originY != 0 || _sampleStep != 1 || _buf == null || _buf.Width != cw || _buf.Height != ch || _bitmap == null)

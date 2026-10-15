@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "revision": "2026-10-15.site.research",
+  "evidence": "battle - 人工命名版.fbs 的注释；见 fields/research-labels.json 的研究快照。AgentInfo 保留等宽合并成员，位段映射不变。",
+  "fields": [
+    {
+      "id": "event.cell_index",
+      "owner": "TriggerEvent",
+      "path": "/0",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "沿用现有编辑器映射；不表示本轮新增游戏内验证。"
+    },
+    {
+      "id": "event.parameter_1",
+      "owner": "TriggerEvent",
+      "path": "/1",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "城市名称ID；名称根据人工注释修订，保留现有 API 标识以兼容脚本。"
+    },
+    {
+      "id": "building",
+      "owner": "TriggerEvent",
+      "path": "/3",
+      "kind": "table",
+      "confidence": "tentative",
+      "note": "沿用现有编辑器映射；不表示本轮新增游戏内验证。"
+    },
+    {
+      "id": "building.data",
+      "owner": "TriggerEvent",
+      "path": "/0",
+      "kind": "struct",
+      "confidence": "tentative",
+      "note": "沿用现有编辑器映射；不表示本轮新增游戏内验证。",
+      "parent": "building"
+    },
+    {
+      "id": "building.flag",
+      "owner": "TriggerEvent",
+      "path": ".0",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "建筑所属势力ID；名称根据人工注释修订，保留现有 API 标识以兼容脚本。",
+      "parent": "building.data"
+    },
+    {
+      "id": "building.type_id",
+      "owner": "TriggerEvent",
+      "path": ".1",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "沿用现有编辑器映射；不表示本轮新增游戏内验证。",
+      "parent": "building.data"
+    },
+    {
+      "id": "building.extra",
+      "owner": "TriggerEvent",
+      "path": ".2",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "雪地贴图标记，暂定；名称根据人工注释修订，保留现有 API 标识以兼容脚本。",
+      "parent": "building.data"
+    },
+    {
+      "id": "building.owner",
+      "owner": "TriggerEvent",
+      "path": ".3",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "贴图变体；名称根据人工注释修订，保留现有 API 标识以兼容脚本。",
+      "parent": "building.data"
+    },
+    {
+      "id": "building.dx",
+      "owner": "TriggerEvent",
+      "path": ".4",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "沿用现有编辑器映射；不表示本轮新增游戏内验证。",
+      "parent": "building.data"
+    },
+    {
+      "id": "building.dy",
+      "owner": "TriggerEvent",
+      "path": ".5",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "沿用现有编辑器映射；不表示本轮新增游戏内验证。",
+      "parent": "building.data"
+    },
+    {
+      "id": "building.parameter_6",
+      "owner": "TriggerEvent",
+      "path": "/6",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "新招募部队朝向，暂定；名称根据人工注释修订，保留现有 API 标识以兼容脚本。",
+      "parent": "building"
+    },
+    {
+      "id": "fort",
+      "owner": "TriggerEvent",
+      "path": "/4",
+      "kind": "table",
+      "confidence": "tentative",
+      "note": "沿用现有编辑器映射；不表示本轮新增游戏内验证。"
+    },
+    {
+      "id": "fort.id",
+      "owner": "TriggerEvent",
+      "path": "/0",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "沿用现有编辑器映射；不表示本轮新增游戏内验证。",
+      "parent": "fort"
+    },
+    {
+      "id": "fort.parameter_3",
+      "owner": "TriggerEvent",
+      "path": "/3",
+      "kind": "value",
+      "confidence": "tentative",
+      "note": "工事贴图朝向；名称根据人工注释修订，保留现有 API 标识以兼容脚本。",
+      "parent": "fort"
+    }
+  ]
+}

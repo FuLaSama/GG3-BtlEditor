@@ -82,3 +82,9 @@ BTL/
 GameData/
 gamedata/
 docs/
+
+# 架构改进计划和 Lua 扩展分析随源码维护，其余 docs 内容仍作为本地资料
+!/docs/
+/docs/*
+!/docs/架构改进计划.md
+!/docs/Lua扩展能力分析.md

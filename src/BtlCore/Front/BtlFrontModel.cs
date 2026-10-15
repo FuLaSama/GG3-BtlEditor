@@ -15,6 +15,7 @@
  * 本文件不读 battle.fbs：类型名字只是字符串标签。字段语义由 SoftSchema / 编辑器控件绑定。
  */
 using System.Globalization;
+using BtlCore.Fb;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -62,14 +63,27 @@ namespace BtlCore.Front
         public string Elem { get; set; }
         /// <summary>特殊编码名。country_ai_bt = 国家行为树打包字节流已解成 JSON。</summary>
         public string Enc { get; set; }
+        /// <summary>已解包载荷的原始字节。保存时内容未变则原样复用；历史快照共享只读数据。</summary>
+        public ReadOnlyMemory<byte> PackedSource { get; internal set; }
         /// <summary>元素是 struct 时，整条向量共用的成员类型。空则写出时再看元素自己的 Layout 或 fbs。</summary>
         public List<string> StructLayout { get; } = new List<string>();
         public List<object> V { get; } = new List<object>();
     }
 
     /// <summary>一份关卡：Root 即 battle.fbs 的 Root 表。FormatVersion 是 Front JSON 自己的版本，不是 BTL 的 version 字段。</summary>
+    public sealed record FieldCatalogUse(string Sha256, string DefinitionJson, IReadOnlyList<string> Fields);
+    public sealed record PayloadCodecUse(string Path, string CodecId, string Revision, string SourceSha256);
+
     public sealed class BtlFrontDocument
     {
+        EditSession _editing;
+        public EditSession Editing => _editing ??= new EditSession(this);
+        public SchemaContext Context { get; init; } = SoftSchema.DefaultContext;
+        public IReadOnlyList<ConvertIssue> SourceIssues { get; internal set; } = Array.Empty<ConvertIssue>();
+        public string SourceSha256 { get; internal set; }
+        public IReadOnlyList<FieldCatalogUse> FieldCatalogUses { get; set; } = Array.Empty<FieldCatalogUse>();
+        public IReadOnlyList<PayloadCodecUse> PayloadCodecUses { get; set; } = Array.Empty<PayloadCodecUse>();
+        public bool HasUnresolvedData => SourceIssues.Any(i => i.BlocksRebuild);
         public int FormatVersion { get; set; } = 1;
         public BtlTable Root { get; set; }
     }
@@ -85,7 +99,7 @@ namespace BtlCore.Front
         };
 
         /// <summary>解析 format=btlfront 的 JSON。root 必须是 table。</summary>
-        public static BtlFrontDocument Parse(string json)
+        public static BtlFrontDocument Parse(string json, SchemaContext context = null)
         {
             var node = JsonNode.Parse(json, documentOptions: new JsonDocumentOptions { MaxDepth = 1024 });
             if (node is not JsonObject obj)
@@ -95,8 +109,17 @@ namespace BtlCore.Front
             if (!string.Equals(format, "btlfront", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("不是 BtlFront 文档（缺少 format=btlfront）");
 
+            context ??= SoftSchema.DefaultContext;
+            string fingerprint = obj["interpretation"]?["schema_sha256"]?.GetValue<string>();
+            if (fingerprint != null && fingerprint != context.Fingerprint)
+                throw new InvalidDataException("Front 文档的 schema 版本不匹配，请提供原解释上下文或从原文件重新解释。");
             var doc = new BtlFrontDocument
             {
+                Context = context,
+                SourceSha256 = obj["interpretation"]?["source_sha256"]?.GetValue<string>(),
+                FieldCatalogUses = obj["interpretation"]?["field_catalogs"]?.Deserialize<FieldCatalogUse[]>() ?? Array.Empty<FieldCatalogUse>(),
+                PayloadCodecUses = obj["interpretation"]?["payload_codecs"]?.Deserialize<PayloadCodecUse[]>() ?? Array.Empty<PayloadCodecUse>(),
+                SourceIssues = obj["interpretation"]?["issues"]?.Deserialize<ConvertIssue[]>() ?? Array.Empty<ConvertIssue>(),
                 FormatVersion = obj["format_version"]?.GetValue<int>() ?? 1,
                 Root = ReadNode(obj["root"]) as BtlTable
             };
@@ -113,12 +136,20 @@ namespace BtlCore.Front
             {
                 ["format"] = "btlfront",
                 ["format_version"] = doc.FormatVersion,
-                ["root"] = WriteNode(doc.Root)
+                ["root"] = WriteNode(doc.Root),
+                ["interpretation"] = new JsonObject
+                {
+                    ["schema_sha256"] = doc.Context.Fingerprint,
+                    ["source_sha256"] = doc.SourceSha256,
+                    ["field_catalogs"] = JsonSerializer.SerializeToNode(doc.FieldCatalogUses),
+                    ["payload_codecs"] = JsonSerializer.SerializeToNode(doc.PayloadCodecUses),
+                    ["issues"] = JsonSerializer.SerializeToNode(doc.SourceIssues)
+                }
             };
             return obj.ToJsonString(JsonOptions);
         }
 
-        public static BtlFrontDocument LoadFile(string path) => Parse(File.ReadAllText(path));
+        public static BtlFrontDocument LoadFile(string path, SchemaContext context = null) => Parse(File.ReadAllText(path), context);
 
         public static void SaveFile(BtlFrontDocument doc, string path) =>
             File.WriteAllText(path, Serialize(doc), System.Text.Encoding.UTF8);
@@ -160,7 +191,7 @@ namespace BtlCore.Front
             }
             if (node is BtlVector vector)
             {
-                var copy = new BtlVector { T = vector.T, Elem = vector.Elem, Enc = vector.Enc };
+                var copy = new BtlVector { T = vector.T, Elem = vector.Elem, Enc = vector.Enc, PackedSource = vector.PackedSource };
                 copy.StructLayout.AddRange(vector.StructLayout);
                 copy.V.Capacity = vector.V.Count;
                 foreach (var value in vector.V) copy.V.Add(CloneValue(value));
@@ -200,6 +231,7 @@ namespace BtlCore.Front
                     return sta.Layout.SequenceEqual(stb.Layout) && ValuesEqual(sta.V, stb.V);
                 if (a is BtlVector va && b is BtlVector vb)
                     return va.Elem == vb.Elem && va.Enc == vb.Enc
+                        && va.PackedSource.Span.SequenceEqual(vb.PackedSource.Span)
                         && va.StructLayout.SequenceEqual(vb.StructLayout) && ValuesEqual(va.V, vb.V);
                 return false;
             }
@@ -229,6 +261,11 @@ namespace BtlCore.Front
             if (doc?.Root == null) return new BtlFrontDocument { Root = NewTable() };
             return new BtlFrontDocument
             {
+                Context = doc.Context,
+                SourceIssues = doc.SourceIssues,
+                SourceSha256 = doc.SourceSha256,
+                FieldCatalogUses = doc.FieldCatalogUses,
+                PayloadCodecUses = doc.PayloadCodecUses,
                 FormatVersion = doc.FormatVersion,
                 Root = Clone(doc.Root) as BtlTable ?? NewTable()
             };
@@ -295,6 +332,15 @@ namespace BtlCore.Front
                             Enc = obj["enc"]?.GetValue<string>()
                         };
                         ReadLayout(obj["layout"], vec.StructLayout);
+                        if (obj["packed_source"] is JsonValue source)
+                        {
+                            string text = source.GetValue<string>();
+                            if (text.Length > (PackedJsonStream.MaxPayloadBytes + 2L) / 3 * 4)
+                                throw new InvalidDataException("原始 FlexBuffers 载荷超过字节预算");
+                            byte[] bytes = Convert.FromBase64String(text);
+                            if (bytes.Length > PackedJsonStream.MaxPayloadBytes) throw new InvalidDataException("原始 FlexBuffers 载荷超过字节预算");
+                            vec.PackedSource = bytes;
+                        }
                         if (obj["v"] is JsonArray items)
                         {
                             bool rawEnc = !string.IsNullOrEmpty(vec.Enc);
@@ -351,6 +397,7 @@ namespace BtlCore.Front
                 }
                 var o = new JsonObject { ["t"] = "vector", ["elem"] = vec.Elem ?? "unknown", ["v"] = arr };
                 if (!string.IsNullOrEmpty(vec.Enc)) o["enc"] = vec.Enc;
+                if (!vec.PackedSource.IsEmpty) o["packed_source"] = Convert.ToBase64String(vec.PackedSource.Span);
                 WriteLayout(o, vec.StructLayout);
                 return o;
             }

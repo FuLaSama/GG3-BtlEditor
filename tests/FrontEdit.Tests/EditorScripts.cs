@@ -20,10 +20,12 @@ static class EditorScripts
     {
         string scripts = Path.Combine(Root(), "EditorLayout", "scripts");
         // 单独测试页面动作时，也加载与正式布局一致的对象层依赖。
-        foreach (string library in new[] { "common/游戏对象.lua", "common/业务对象.lua", "common/地图操作.lua", "common/行为树对象.lua" })
+        var layout = LayoutLoader.Load(Path.Combine(Root(), "EditorLayout"), null);
+        if (!layout.Ok) throw new InvalidDataException(string.Join("\n", layout.Errors));
+        foreach (var library in layout.Bundle.Scripts.Where(s =>
+            s.Path.Replace('\\', '/').Contains("/scripts/common/") || s.Path.Replace('\\', '/').Contains("/scripts/objects/")))
         {
-            string libraryPath = Path.Combine(scripts, library);
-            host.Execute(File.ReadAllText(libraryPath), Path.GetFileName(libraryPath));
+            host.Execute(library.Text, library.Name);
         }
         foreach (string name in relative)
         {

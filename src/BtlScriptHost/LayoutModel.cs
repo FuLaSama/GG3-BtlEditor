@@ -2,6 +2,7 @@ namespace BtlCore.Scripting
 {
     public sealed class LayoutBundle
     {
+        public FieldCatalog Fields { get; set; } = FieldCatalog.Builtin;
         public List<LayoutTab> Tabs { get; } = new List<LayoutTab>();
         public List<LayoutScript> Scripts { get; } = new List<LayoutScript>();
     }
@@ -38,6 +39,14 @@ namespace BtlCore.Scripting
         public string Id;
         public string Text;
         public string Filter;
+        public bool Collapsible;
+        public bool Collapsed;
+        public string Model;
+        public string Selection;
+        public bool Browse;
+        public string Prepare;
+        public string Omit;
+        public ResearchLabels Labels;
         public List<LayoutPalette> Palettes { get; } = new List<LayoutPalette>();
         public List<LayoutColumn> Columns { get; } = new List<LayoutColumn>();
         public List<LayoutField> Fields { get; } = new List<LayoutField>();
@@ -54,8 +63,12 @@ namespace BtlCore.Scripting
 
     public sealed class LayoutGroup
     {
+        public string Id;
         public string Title;
+        public bool Collapsible;
+        public bool Collapsed;
         public List<LayoutRow> Rows { get; } = new List<LayoutRow>();
+        public List<LayoutGroup> Groups { get; } = new();
     }
 
     public sealed class LayoutRow
@@ -66,15 +79,18 @@ namespace BtlCore.Scripting
 
     public sealed class LayoutColumn
     {
+        public string FieldKey;
         public string Header;
         public string Bind;
     }
 
     public sealed class LayoutField
     {
+        public string FieldKey;
         public string Id;
         public string Label;
         public string Widget;
+        public string Tip;
         public string Type;
         public string Action;
         /// <summary>相对栏目向量的后缀，如 /0.6；含 {index} 或 {cell} 时是完整路径。</summary>
@@ -90,6 +106,8 @@ namespace BtlCore.Scripting
         public decimal? Minimum;
         public decimal? Maximum;
         public bool ReadOnly;
+        /// <summary>实际布尔槽位的三态编辑：未写、false、true。存在开关不用此选项。</summary>
+        public bool Nullable;
         public bool Enabled = true;
         public string DisableReason;
     }

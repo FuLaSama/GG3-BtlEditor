@@ -25,9 +25,11 @@ namespace BtlCore.Fb
     public static class SchemaDumpToFront
     {
         /// <summary>dump 可以是整个文档对象（含 root 键）或已经是 root 表 JSON。</summary>
-        public static BtlFrontDocument ToFront(JsonNode dump, FbsSchema schema, List<string> notes = null)
+        public static BtlFrontDocument ToFront(JsonNode dump, FbsSchema schema, List<string> notes = null, SchemaContext context = null)
         {
             if (schema == null) throw new ArgumentNullException(nameof(schema));
+            if (context != null && !ReferenceEquals(context.Schema, schema))
+                throw new ArgumentException("schema 与 context 必须属于同一份解释。");
             notes ??= new List<string>();
 
             JsonObject rootJson = dump as JsonObject;
@@ -38,7 +40,7 @@ namespace BtlCore.Fb
 
             var conv = new Conv(schema, notes);
             var root = conv.Table(rootJson, schema.RootType, "/");
-            return new BtlFrontDocument { FormatVersion = 1, Root = root ?? BtlFrontJson.NewTable() };
+            return new BtlFrontDocument { Context = context ?? new SchemaContext(schema), FormatVersion = 1, Root = root ?? BtlFrontJson.NewTable() };
         }
 
         sealed class Conv

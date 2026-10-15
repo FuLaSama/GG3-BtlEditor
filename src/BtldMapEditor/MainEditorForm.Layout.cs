@@ -19,7 +19,8 @@ namespace BtldMapEditor
         // 先完整创建新布局，再替换；热加载失败时保留当前 XML 页面，不创建旧 UI。
         void InstallEditorLayout()
         {
-            var result = LayoutLoader.Load(FindLayoutDir("EditorLayout"), FindLayoutDir("EditorLayout.user"));
+            EndMapGesture();
+            var result = LayoutLoader.Load(FindLayoutDir("EditorLayout"), FindLayoutDir("EditorLayout.user"), Doc?.Context);
             if (!result.Ok) { ShowLayoutErrors(result.Errors); return; }
             var host = new ScriptHost();
             var pages = new Dictionary<string, LayoutPageControl>(StringComparer.Ordinal);
@@ -27,11 +28,13 @@ namespace BtldMapEditor
             var errors = new List<string>();
             try
             {
+                host.ConfigureFields(result.Bundle.Fields);
                 foreach (var script in result.Bundle.Scripts)
                 {
                     try { host.Execute(script.Text, script.Name); }
                     catch (Exception ex) { throw new InvalidDataException(script.Path + "：" + ex.GetBaseException().Message, ex); }
                 }
+                host.CreateSchemaContext(Doc?.Context); // 全部声明完成后验证，失败保留旧布局和解释。
                 if (HasDoc) host.Load(Doc);
                 foreach (var tab in result.Bundle.Tabs)
                 {
@@ -90,11 +93,11 @@ namespace BtldMapEditor
             terrain.PaletteActivated += (item, target) =>
             {
                 SelectBrush(item, target);
-                if (_selectedCellIdx >= 0) ApplyPaletteToCell(_selectedCellIdx, item, target, true);
+                if (_selectedCellIdx >= 0) ApplyPaletteToCell(_selectedCellIdx, item, target);
             };
             terrain.PaletteClearRequested += target =>
             {
-                if (_selectedCellIdx >= 0) ClearPaletteLayer(_selectedCellIdx, target, true);
+                if (_selectedCellIdx >= 0) ClearPaletteLayer(_selectedCellIdx, target);
             };
             terrain.PaletteTargetChanged += target =>
             {
@@ -131,13 +134,12 @@ namespace BtldMapEditor
             if (_selectedCellIdx >= mapCanvas.Cells.Count) _selectedCellIdx = -1;
             RefreshEditorPages();
             RefreshSelectedTerrainUi();
-            AddHistoryState();
             RefreshRegistryViewIfVisible();
         }
 
         bool RunEdit(string action, ScriptArgs args)
         {
-            if (!HasDoc || _stageHost == null) return false;
+            if (!HasDoc || !(_front?.CanExport ?? false) || _stageHost == null) return false;
             if (!_stageHost.CanRun(action))
             {
                 ShowLayoutErrors(new List<string> { "没有可用的脚本动作：" + action });
@@ -153,6 +155,7 @@ namespace BtldMapEditor
                 return false;
             }
             mapCanvas.ReloadCells(Doc);
+            RefreshRegistryViewIfVisible();
             return true;
         }
 

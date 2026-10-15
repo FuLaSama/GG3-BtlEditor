@@ -13,5 +13,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\BtlCore\BtlCore.csproj" />
     <ProjectReference Include="..\..\src\BtlScriptHost\BtlScriptHost.csproj" />
+    <EmbeddedResource Include="Fixtures\flexbuffers.json" />
   </ItemGroup>
 </Project>

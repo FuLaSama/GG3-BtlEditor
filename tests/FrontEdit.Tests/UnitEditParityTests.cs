@@ -41,9 +41,7 @@ public class UnitEditParityTests
         var host = new ScriptHost();
         host.Load(doc);
         EditorScripts.Load(host,
-            "unit/部队AI行为.lua",
-            "unit/将领配置.lua",
-            "unit/特种部队配置.lua",
+            "unit/配置表单.lua",
             "unit/基础部队信息.lua");
         return host;
     }
@@ -131,7 +129,7 @@ public class UnitEditParityTests
         });
         var gen = (BtlTable)AgentAt(doc, 1).F[11];
         Assert.Equal(false, gen.F.ContainsKey(1) ? ((BtlScalar)gen.F[1]).V : null);
-        Assert.Equal((byte)0, ((BtlScalar)gen.F[2]).V);
+        Assert.False(gen.F.ContainsKey(2));
 
         host.Run("apply_unit", new ScriptArgs
         {

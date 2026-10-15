@@ -1,0 +1,274 @@
+{
+  "generator": "flatbuffers 25.12.19",
+  "fixtures": [
+    {
+      "name": "empty",
+      "bytes": "AAAoAQ==",
+      "supported": true,
+      "expected": []
+    },
+    {
+      "name": "signed--1",
+      "bytes": "YnRpZAB2YWx1ZQACDAgCAQIB/wQEAQUkAigB",
+      "supported": true,
+      "expected": [
+        {
+          "btid": 1,
+          "value": -1
+        }
+      ]
+    },
+    {
+      "name": "signed--129",
+      "bytes": "YnRpZAB2YWx1ZQACDAgCAAEAAgABAH//BQUBByUCKAE=",
+      "supported": true,
+      "expected": [
+        {
+          "btid": 1,
+          "value": -129
+        }
+      ]
+    },
+    {
+      "name": "signed--32769",
+      "bytes": "YnRpZAB2YWx1ZQACDAgAAAQAAAABAAAAAgAAAAEAAAD/f///BgYBCyYCKAE=",
+      "supported": true,
+      "expected": [
+        {
+          "btid": 1,
+          "value": -32769
+        }
+      ]
+    },
+    {
+      "name": "signed--1099511627776",
+      "bytes": "YnRpZAB2YWx1ZQACDAgAAAQAAAAAAAAAAQAAAAAAAAACAAAAAAAAAAEAAAAAAAAAAAAAAAD///8HBwETJwIoAQ==",
+      "supported": true,
+      "expected": [
+        {
+          "btid": 1,
+          "value": -1099511627776
+        }
+      ]
+    },
+    {
+      "name": "signed--9223372036854775808",
+      "bytes": "YnRpZAB2YWx1ZQACDAgAAAQAAAAAAAAAAQAAAAAAAAACAAAAAAAAAAEAAAAAAAAAAAAAAAAAAIAHBwETJwIoAQ==",
+      "supported": true,
+      "expected": [
+        {
+          "btid": 1,
+          "value": -9223372036854775808
+        }
+      ]
+    },
+    {
+      "name": "signed-127",
+      "bytes": "YnRpZAB2YWx1ZQACDAgCAQIBfwQEAQUkAigB",
+      "supported": true,
+      "expected": [
+        {
+          "btid": 1,
+          "value": 127
+        }
+      ]
+    },
+    {
+      "name": "signed-128",
+      "bytes": "YnRpZAB2YWx1ZQACDAgCAAEAAgABAIAABQUBByUCKAE=",
+      "supported": true,
+      "expected": [
+        {
+          "btid": 1,
+          "value": 128
+        }
+      ]
+    },
+    {
+      "name": "signed-32767",
+      "bytes": "YnRpZAB2YWx1ZQACDAgCAAEAAgABAP9/BQUBByUCKAE=",
+      "supported": true,
+      "expected": [
+        {
+          "btid": 1,
+          "value": 32767
+        }
+      ]
+    },
+    {
+      "name": "signed-32768",
+      "bytes": "YnRpZAB2YWx1ZQACDAgAAAQAAAABAAAAAgAAAAEAAAAAgAAABgYBCyYCKAE=",
+      "supported": true,
+      "expected": [
+        {
+          "btid": 1,
+          "value": 32768
+        }
+      ]
+    },
+    {
+      "name": "signed-70000",
+      "bytes": "YnRpZAB2YWx1ZQACDAgAAAQAAAABAAAAAgAAAAEAAABwEQEABgYBCyYCKAE=",
+      "supported": true,
+      "expected": [
+        {
+          "btid": 1,
+          "value": 70000
+        }
+      ]
+    },
+    {
+      "name": "signed-9223372036854775807",
+      "bytes": "YnRpZAB2YWx1ZQACDAgAAAQAAAAAAAAAAQAAAAAAAAACAAAAAAAAAAEAAAAAAAAA/////////38HBwETJwIoAQ==",
+      "supported": true,
+      "expected": [
+        {
+          "btid": 1,
+          "value": 9223372036854775807
+        }
+      ]
+    },
+    {
+      "name": "nested-gb18030",
+      "bytes": "YnRpZABuYW1lAAjW0M7ElTKCNgBub2RlAGlkAGNsYXNzAAR3YWl0AHJvdW5kcwADFBgKAwEDE/8CFAQEAQckbnVsbABib29sAGZsb2F0AHBhcmFtcwAABxRZEVZIHg8ACAAAAAEAAAAHAAAAAQAAAAEAAAAAAKA/bQAAAD8AAAAAAAAALQAAAGoGDhQoAigBJCYCKAE=",
+      "supported": true,
+      "expected": [
+        {
+          "btid": 1,
+          "name": "中文𠀀",
+          "node": [
+            {
+              "id": -1,
+              "class": "wait",
+              "rounds": 2
+            }
+          ],
+          "null": null,
+          "bool": true,
+          "float": 1.25,
+          "params": []
+        }
+      ]
+    },
+    {
+      "name": "UInt-13",
+      "bytes": "YnRpZAB2YWx1ZQACDAgAAAQAAAAAAAAAAQAAAAAAAAACAAAAAAAAAAEAAAAAAAAA//////////8HCwETJwIoAQ==",
+      "supported": true,
+      "expected": [
+        {
+          "btid": 1,
+          "value": 18446744073709551615
+        }
+      ]
+    },
+    {
+      "name": "IndirectInt-14",
+      "bytes": "YnRpZAB2YWx1ZQAAAAAAAAAAAAAA////AhkVAgECAQ8EGwEFJAIoAQ==",
+      "supported": true,
+      "expected": [
+        {
+          "btid": 1,
+          "value": -1099511627776
+        }
+      ]
+    },
+    {
+      "name": "IndirectUInt-15",
+      "bytes": "YnRpZAB2YWx1ZQAAAAAAAP//////////AhkVAgECAQ8EHwEFJAIoAQ==",
+      "supported": true,
+      "expected": [
+        {
+          "btid": 1,
+          "value": 18446744073709551615
+        }
+      ]
+    },
+    {
+      "name": "IndirectFloat-16",
+      "bytes": "YnRpZAB2YWx1ZQAAAACgPwIRDQIBAgELBCIBBSQCKAE=",
+      "supported": true,
+      "expected": [
+        {
+          "btid": 1,
+          "value": 1.25
+        }
+      ]
+    },
+    {
+      "name": "TypedVectorFromElements-17",
+      "bytes": "YnRpZAB2YWx1ZQAAAwD//wIALAECFRECAQIBDQQtAQUkAigB",
+      "supported": true,
+      "expected": [
+        {
+          "btid": 1,
+          "value": [
+            -1,
+            2,
+            300
+          ]
+        }
+      ]
+    },
+    {
+      "name": "TypedVectorFromElements-18",
+      "bytes": "YnRpZAB2YWx1ZQACAQACDwsCAQIBCQSQAQUkAigB",
+      "supported": true,
+      "expected": [
+        {
+          "btid": 1,
+          "value": [
+            true,
+            false
+          ]
+        }
+      ]
+    },
+    {
+      "name": "TypedVectorFromElements-19",
+      "bytes": "YnRpZAB2YWx1ZQAAAgAAAAAAoD8AAADAAhkVAgECAQ8ENgEFJAIoAQ==",
+      "supported": true,
+      "expected": [
+        {
+          "btid": 1,
+          "value": [
+            1.25,
+            -2.0
+          ]
+        }
+      ]
+    },
+    {
+      "name": "FixedTypedVectorFromElements-20",
+      "bytes": "YnRpZAB2YWx1ZQAA//8CACwBAhMPAgECAQ0ETQEFJAIoAQ==",
+      "supported": true,
+      "expected": [
+        {
+          "btid": 1,
+          "value": [
+            -1,
+            2,
+            300
+          ]
+        }
+      ]
+    },
+    {
+      "name": "unsupported-blob",
+      "bytes": "YmxvYgACAAEBCQEBAQdkAQMkAigB",
+      "supported": false,
+      "expected": null
+    },
+    {
+      "name": "bad-string-length",
+      "bytes": "dGV4dAD/YWJjAAELAQEBCRQBAyQCKAE=",
+      "supported": false,
+      "expected": null
+    },
+    {
+      "name": "invalid-root-width",
+      "bytes": "YnRpZAABBgEBAQEEAQMkAigD",
+      "supported": false,
+      "expected": null
+    }
+  ]
+}

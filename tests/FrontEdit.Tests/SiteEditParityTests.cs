@@ -111,8 +111,8 @@ public class SiteEditParityTests
             ObjectIndex = 2,
             Input = Map(("fort_id", null), ("field1", null), ("field3", null))
         });
-        Assert.Equal((byte)0, ((BtlScalar)((BtlTable)EventAt(doc, 2).F[4]).F[0]).V);
-        Assert.Equal((ushort)0, ((BtlScalar)EventAt(doc, 2).F[1]).V);
+        Assert.False(((BtlTable)EventAt(doc, 2).F[4]).F.ContainsKey(0));
+        Assert.False(EventAt(doc, 2).F.ContainsKey(1));
 
         host.Run("place_building", new ScriptArgs
         {

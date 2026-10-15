@@ -1,7 +1,7 @@
--- 国家行为树与节点共用具名 JSON 对象；未知键保持原样。
+-- 国家、部队、建筑共用 FlexBuffers 树库；未知键保持原样。
 local json, bridge = editor.json, editor.internal
-local scalar_keys={btid=true,id=true,name=true,agent=true,class=true,method=true,result=true,count=true}
-local lists={params=true,rounds=true}
+local scalar_keys={btid=true,id=true,name=true,agent=true,class=true,method=true,result=true,count=true,rounds=true}
+local lists={params=true}
 local wrap
 wrap=function(handle)
   local object, methods = {}, {}
@@ -33,6 +33,10 @@ wrap=function(handle)
     __newindex=function(_,key,value)
       bridge.check_context(handle)
       assert(scalar_keys[key] or lists[key],"行为树没有属性「"..tostring(key).."」")
+      if key=="rounds" and value~=nil then
+        assert(type(value)=="number" and value>=0 and value%1==0,"rounds 需要非负整数或 nil")
+      end
+      if lists[key] and value~=nil then value=json.array(value) end
       json.set(handle,key,value)
     end,__metatable="game behavior tree",
   })
@@ -46,7 +50,7 @@ function game.behavior_trees.create()
   local handle=json.vec_append("/10")
   json.set(handle,"node",json.array())
   local tree=wrap(handle)
-  tree:update {btid=next_id,name="新行为树",agent="CBTCountryAgent",class="bt"}
+  tree:update {btid=next_id,id=-1,name="新行为树",agent="CBTCountryAgent",class="bt"}
   return tree
 end
 function game.behavior_trees.remove(index) if index~=nil then json.vec_remove("/10",index) end end

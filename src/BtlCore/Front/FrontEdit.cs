@@ -125,9 +125,12 @@ namespace BtlCore.Front
         /// <summary>删掉任意下标的成员，后面的成员前移。有 Layout 时一并改掉。</summary>
         public static void RemoveStructTail(BtlStruct st, int index) => RemoveMember(st, index);
 
-        public static BtlStruct StructFromFbs(string structName, params object[] values)
+        public static BtlStruct StructFromFbs(string structName, params object[] values) =>
+            StructFromFbs(SoftSchema.DefaultContext, structName, values);
+
+        public static BtlStruct StructFromFbs(SchemaContext context, string structName, params object[] values)
         {
-            if (SoftSchema.TryStructMembers(structName, out var members))
+            if (context.TryStructMembers(structName, out var members))
             {
                 var types = new string[members.Length];
                 for (int i = 0; i < members.Length; i++) types[i] = members[i].T;
@@ -333,7 +336,7 @@ namespace BtlCore.Front
         static void RefusePacked(BtlVector vec)
         {
             if (PackedJsonStream.EncIsPackedJson(vec.Enc))
-                throw new FrontEditException("这是国家行为树的打包数据，不能当作普通数组修改。");
+                throw new FrontEditException("这是 FlexBuffers 共用行为树库，不能当作普通数组修改。");
         }
     }
 }

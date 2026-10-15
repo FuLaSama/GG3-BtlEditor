@@ -8,6 +8,7 @@
 using System;
 using System.ComponentModel;
 using System.Drawing;
+using System.Globalization;
 using System.Windows.Forms;
 
 namespace BtldMapEditor
@@ -22,6 +23,8 @@ namespace BtldMapEditor
         private decimal? _lastFiredValue = null;
         private bool _isInternalUpdating = false;
         private bool _userEnabled = true;
+        private string _shownText = "";
+        private object _shownValue;
 
         public event EventHandler ValueChanged;
 
@@ -146,7 +149,7 @@ namespace BtldMapEditor
             get
             {
                 if (string.IsNullOrWhiteSpace(Text)) return null;
-                if (decimal.TryParse(Text.Trim(), out decimal val))
+                if (decimal.TryParse(Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out decimal val))
                 {
                     return val;
                 }
@@ -154,20 +157,33 @@ namespace BtldMapEditor
             }
             set
             {
-                _isInternalUpdating = true;
-                if (value == null)
-                {
-                    Text = "";
-                }
-                else
-                {
-                    decimal clamped = Math.Max(Minimum, Math.Min(Maximum, value.Value));
-                    Text = clamped.ToString();
-                }
-                _isInternalUpdating = false;
-                // 程序赋值只同步基线，不触发 ValueChanged，避免点选格子时把旧控件值写回 Stage。
-                _lastFiredValue = NullableValue;
+                SetDisplayValue(value);
             }
+        }
+
+        /// <summary>显示原值，不按编辑范围截断。未编辑时读回原对象，保留浮点精度。</summary>
+        public void SetDisplayValue(object value)
+        {
+            _shownValue = value;
+            _shownText = Convert.ToString(value, CultureInfo.InvariantCulture) ?? "";
+            _isInternalUpdating = true;
+            try { Text = _shownText; }
+            finally { _isInternalUpdating = false; }
+            _lastFiredValue = NullableValue;
+        }
+
+        /// <summary>只有空白才表示 null；非法、越界或非整数输入不能被提交为缺省。</summary>
+        public object ReadValue()
+        {
+            if (Text == _shownText) return _shownValue;
+            if (string.IsNullOrWhiteSpace(Text)) return null;
+            if (!decimal.TryParse(Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out decimal value))
+                throw new FormatException("请输入有效数字；留空才表示未写。");
+            if (DecimalPlaces == 0 && decimal.Truncate(value) != value)
+                throw new FormatException("这个字段需要整数。");
+            if (value < Minimum || value > Maximum)
+                throw new FormatException($"数值必须在 {Minimum} ～ {Maximum} 之间。");
+            return (double)value;
         }
 
         protected override void OnTextChanged(EventArgs e)
@@ -182,30 +198,14 @@ namespace BtldMapEditor
         protected override void OnLeave(EventArgs e)
         {
             base.OnLeave(e);
-            if (!string.IsNullOrWhiteSpace(Text))
-            {
-                if (decimal.TryParse(Text.Trim(), out decimal val))
-                {
-                    decimal clamped = Math.Max(Minimum, Math.Min(Maximum, val));
-                    if (clamped != val)
-                    {
-                        _isInternalUpdating = true;
-                        Text = clamped.ToString();
-                        _isInternalUpdating = false;
-                    }
-                }
-                else
-                {
-                    _isInternalUpdating = true;
-                    Text = "";
-                    _isInternalUpdating = false;
-                }
-                CheckAndFireValueChanged();
-            }
+            CheckAndFireValueChanged();
         }
 
         private void CheckAndFireValueChanged()
         {
+            // 无效文本保持原样，不发出一个看似“清空”的事件。
+            try { _ = ReadValue(); }
+            catch (FormatException) { return; }
             decimal? current = NullableValue;
             if (current != _lastFiredValue)
             {

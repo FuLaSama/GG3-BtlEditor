@@ -52,6 +52,7 @@ public class GameToolsTests
         var layout = LayoutLoader.Load(Path.Combine(EditorScripts.Root(), "EditorLayout"), null);
         Assert.True(layout.Ok, string.Join("\n", layout.Errors));
         foreach (var script in layout.Bundle.Scripts) host.Execute(script.Text, script.Name);
+        host.Execute(File.ReadAllText(Path.Combine(EditorScripts.Root(), "EditorLayout/examples/常用工具.lua")), "example-tools.lua");
         host.Load(doc);
         return host;
     }
@@ -69,7 +70,7 @@ public class GameToolsTests
         var expected = BtlFrontJson.CloneDocument(doc);
         ((BtlStruct)Unit(expected, 1).F[0]).V[6] = (ushort)20;
         Assert.Equal(1, host.RunTool("我的恢复工具", new ScriptArgs { CellIndex = 1 }));
-        Assert.Equal(BtlFrontJson.Serialize(expected), BtlFrontJson.Serialize(doc));
+        Assert.True(BtlFrontJson.ContentEquals(expected, doc));
         Assert.Equal(1, host.UndoFrames);
     }
 
@@ -91,7 +92,7 @@ public class GameToolsTests
         var expected = BtlFrontJson.CloneDocument(doc);
         foreach (int i in new[] { 0, 2 }) ((BtlStruct)Unit(expected, i).F[0]).V[4] = (ushort)((4 << 8) | 17);
         Assert.Equal(2, host.RunTool("faction_level", Parameters(("faction", 3), ("level", 17))));
-        Assert.Equal(BtlFrontJson.Serialize(expected), BtlFrontJson.Serialize(doc));
+        Assert.True(BtlFrontJson.ContentEquals(expected, doc));
         Assert.Equal(1, host.UndoFrames); Assert.Equal(1, host.SnapshotCount);
     }
 
@@ -109,7 +110,7 @@ public class GameToolsTests
         info.V[4] = (ushort)((4 << 8) | 33); info.V[5] = (ushort)((5 << 8) | 6); info.V[6] = (ushort)12;
         ((BtlScalar)((BtlTable)Unit(expected, 0).F[11]).F[0]).V = (ushort)88;
         host.RunTool("局部修改", new ScriptArgs { CellIndex = 0 });
-        Assert.Equal(BtlFrontJson.Serialize(expected), BtlFrontJson.Serialize(doc));
+        Assert.True(BtlFrontJson.ContentEquals(expected, doc));
     }
 
     [Fact]
@@ -289,7 +290,7 @@ public class GameToolsTests
         var host = Host(Sample());
         Assert.Throws<FrontEditException>(() => host.Execute("editor.tool {title='bad', target='stage',run=function() end," + declaration + "}", "bad-tool.lua"));
         Assert.DoesNotContain(host.Tools, t => t.Id == "bad");
-        Assert.Equal(7, host.Tools.Count);
+        Assert.Equal(8, host.Tools.Count);
     }
 
     [Fact]

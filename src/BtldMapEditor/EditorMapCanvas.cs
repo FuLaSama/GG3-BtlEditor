@@ -5,7 +5,7 @@
  *   cell.Unit / TriggerBldg / TriggerFort 与 Document 向量里是同一张表。
  *
  * 两种外观：线框（快，调逻辑）和 Sprite（TerrainSpriteRenderer 位图）。
- * 鼠标：选格、刷地形、拖部队、拉触发连线。改完通知主窗体写回 Document / 记撤销。
+ * 鼠标交互发出编辑请求，由主窗体通过事务修改 Document，再重建投影。
  *
  * 滚动与缩放只动视图，不改格子数据。
  */
@@ -37,7 +37,7 @@ namespace BtldMapEditor
         Sprite
     }
 
-    public class EditorMapCanvas : Panel
+    public partial class EditorMapCanvas : Control
     {
         private BtlFrontDocument _doc;
         private List<MapCell> _cells = new List<MapCell>();
@@ -46,8 +46,9 @@ namespace BtldMapEditor
         private int _radius = 25; // 默认六角格半径
         private MapRenderMode _renderMode = MapRenderMode.All;
         private MapVisualStyle _visualStyle = MapVisualStyle.Sketch;
-        private bool _showCellCoordinates = true;
-        private bool _showCellOffsets = true;
+        private bool _showCellIds = true;
+        private bool _showCellCoordinates;
+        private bool _showCellOffsets;
         private TerrainSpriteRenderer _spriteRenderer;
         private int[] _spriteCellHash;
         private int _spriteMetaKey = int.MinValue;
@@ -63,6 +64,17 @@ namespace BtldMapEditor
         DecodedTerrainMap _spriteDecoded;
         Rectangle _spriteRegion;
         int _spriteRegionStep;
+
+        public bool ShowCellIds
+        {
+            get => _showCellIds;
+            set
+            {
+                if (_showCellIds == value) return;
+                _showCellIds = value;
+                Invalidate();
+            }
+        }
 
         public bool ShowCellCoordinates
         {
@@ -89,6 +101,8 @@ namespace BtldMapEditor
         public event MouseEventHandler MapMouseDown;
         public event MouseEventHandler MapMouseMove;
         public event MouseEventHandler MapMouseUp;
+        public event Action EditGestureStarted;
+        public event Action EditGestureEnded;
 
         public bool BrushMode { get; set; } = false;
         public Action<int> PaintCellRequested { get; set; }
@@ -160,7 +174,9 @@ namespace BtldMapEditor
             get => _radius;
             set
             {
-                _radius = Math.Max(5, Math.Min(300, value));
+                int next=Math.Clamp(value,5,300);
+                if(_radius==next)return;
+                _radius = next;
                 UpdateScrollSize();
                 Invalidate();
             }
@@ -171,10 +187,10 @@ namespace BtldMapEditor
         public EditorMapCanvas()
         {
             DoubleBuffered = true;
-            AutoScroll = true;
             BackColor = Color.FromArgb(248, 250, 252);
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint
-                | ControlStyles.OptimizedDoubleBuffer | ControlStyles.StandardDoubleClick, true);
+                | ControlStyles.OptimizedDoubleBuffer | ControlStyles.StandardDoubleClick
+                | ControlStyles.Opaque | ControlStyles.ResizeRedraw, true);
             UpdateHexTemplate();
         }
 
@@ -202,6 +218,7 @@ namespace BtldMapEditor
         {
             _spriteContentDirty = true;
             _spriteRegion = Rectangle.Empty;
+            _sceneContentVersion++;
         }
 
         public void LoadPreparedDocument(BtlFrontDocument doc, List<MapCell> cells)
@@ -291,7 +308,7 @@ namespace BtldMapEditor
         public string WelcomeText { get; set; } =
             "将军的荣耀3 地图编辑器\n\n" +
             "【简介】\n" +
-            "版本：0.2.2\n本编辑器处于早期开发阶段，使用时如遇到bug欢迎反馈\n\n" +
+            "版本：0.2.3\n本编辑器处于早期开发阶段，使用时如遇到bug欢迎反馈\n\n" +
             "【使用说明】\n" +
             "点击顶部菜单【文件】->【打开...】或【新建关卡地图...】开始使用\n\n" +
             "【快捷键操作】\n" +
@@ -302,7 +319,7 @@ namespace BtldMapEditor
             "• B    : 切换画笔涂色模式（长按左键拖动涂色，批量粘贴剪贴板数据）\n• V    : 地形贴图随机变种\n• O    : 地形贴图随机偏移\n" +
             "• 双击地块  : 在注册表界面内显示\n\n" +
             "【更新日志】\n" +
-            "1.地图游戏贴图模式\n2.bug修复\n3.其他小改动\n\n" +
+            "1.添加更多可修改项\n2.外部lua脚本支持\n3.bug修复\n4.其他小改动\n\n" +
             "" +
             "";
 
@@ -317,7 +334,7 @@ namespace BtldMapEditor
         private void DrawWelcomeText(Graphics g)
         {
             _welcomeLinkRegions.Clear();
-            if (string.IsNullOrWhiteSpace(WelcomeText)) return;
+            if (string.IsNullOrWhiteSpace(WelcomeText)) {DrawRepositoryLink(g);return;}
 
             g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
 
@@ -336,6 +353,7 @@ namespace BtldMapEditor
                 string[] lines = WelcomeText.Split('\n');
                 for (int i = 0; i < lines.Length; i++)
                 {
+                    if(y+bodyFont.GetHeight(g)>WelcomeFooterTop)break;
                     string line = lines[i];
                     if (string.IsNullOrEmpty(line))
                     {
@@ -398,22 +416,16 @@ namespace BtldMapEditor
                     }
                 }
             }
+            DrawRepositoryLink(g);
         }
 
-        protected override void OnPaint(PaintEventArgs e)
+        void PaintMap(Graphics graphics,Rectangle clip)
         {
-            base.OnPaint(e);
-            if (!HasMap || _cells.Count == 0)
-            {
-                DrawWelcomeText(e.Graphics);
-                return;
-            }
-
             // Sprite 模式关闭抗锯齿，避免六角边缘糊成游戏里没有的颜色。
             int cols = MapCols;
             int rows = MapRows;
 
-            Graphics g = e.Graphics;
+            Graphics g = graphics;
             bool wantSprites = _visualStyle == MapVisualStyle.Sprite;
             g.SmoothingMode = wantSprites ? SmoothingMode.None : SmoothingMode.AntiAlias;
             g.PixelOffsetMode = wantSprites ? PixelOffsetMode.Half : PixelOffsetMode.Default;
@@ -425,7 +437,7 @@ namespace BtldMapEditor
             float hDist = _radius * 1.5f;
             float vDist = (float)Math.Sqrt(3) * _radius;
 
-            Rectangle clipRect = e.ClipRectangle;
+            Rectangle clipRect = clip;
             float clipLeft = clipRect.Left - AutoScrollPosition.X;
             float clipTop = clipRect.Top - AutoScrollPosition.Y;
             float clipRight = clipRect.Right - AutoScrollPosition.X;
@@ -449,14 +461,14 @@ namespace BtldMapEditor
             int minRow = Math.Max(0, (int)((clipTop - vDist * 2 - 20) / vDist));
             int maxRow = Math.Min(rows - 1, (int)((clipBottom + vDist * 2 + 20) / vDist));
 
+            var coordFont=PaintFont(7f,FontStyle.Regular);
+            var unitFont=PaintFont(8f,FontStyle.Bold);
             using (var borderPen = new Pen(Color.FromArgb(60, 15, 23, 42), 1))
             using (var selectedPen = new Pen(Color.FromArgb(20, 184, 166), 3))
             using (var dropPreviewBrush = new SolidBrush(Color.FromArgb(130, 255, 255, 255)))
             using (var cityPen = new Pen(Color.FromArgb(120, 0, 0, 0), 1.5f) { DashStyle = DashStyle.Dash })
             using (var playableBorderPen = new Pen(Color.FromArgb(220, 245, 158, 11), 2.5f) { DashStyle = DashStyle.Dash })
             using (var riverPen = new Pen(Color.FromArgb(34, 211, 238), 3.5f) { LineJoin = LineJoin.Round, StartCap = LineCap.Round, EndCap = LineCap.Round })
-            using (var coordFont = new Font("Segoe UI", 7, FontStyle.Regular))
-            using (var unitFont = new Font("Segoe UI", 8, FontStyle.Bold))
             using (var textBrush = new SolidBrush(Color.FromArgb(15, 23, 42)))
             {
                 // 地形画刷缓存
@@ -641,12 +653,19 @@ namespace BtldMapEditor
                             }
                         }
 
-                        // 4. 绘制坐标标签 (X,Y)
-                        if (!spriteMode && _showCellCoordinates)
+                        // 地块 ID 是文件中的 0 起格号：y * 地图宽度 + x，与单位 UID 不同。
+                        // 标签放在地块下沿；同时开坐标时合并为一行。
+                        if (_showCellIds || _showCellCoordinates)
                         {
-                            string coordText = $"{cell.X},{cell.Y}";
-                            SizeF size = g.MeasureString(coordText, coordFont);
-                            g.DrawString(coordText, coordFont, textBrush, cx - size.Width / 2f, cy + _radius * 0.45f);
+                            string label = _showCellIds
+                                ? (_showCellCoordinates ? $"{cell.Index} ({cell.X},{cell.Y})" : $"{cell.Index}")
+                                : $"{cell.X},{cell.Y}";
+                            SizeF size = g.MeasureString(label, coordFont);
+                            // 标签落在整像素上，平移复用帧时与重新绘制保持相同的文字栅格。
+                            float x = MathF.Round(cx - size.Width / 2f), y = MathF.Round(cy + _radius * 0.45f);
+                            if (spriteMode)
+                                g.FillRectangle(GetCachedBrush(Color.FromArgb(220, 248, 250, 252)), x, y, size.Width, size.Height);
+                            g.DrawString(label, coordFont, textBrush, x, y);
                         }
 
                         // 5. 独立绘制建筑物与工事标签（贴图模式已经画了精灵，不再叠文字徽章）
@@ -659,7 +678,7 @@ namespace BtldMapEditor
                             string bSymbol = bName.Length > 0 ? bName.Substring(0, Math.Min(3, bName.Length)) : "建";
                             string bText = $"{bSymbol}{owner}";
 
-                            using (var bFont = new Font("Segoe UI", 7.5f, FontStyle.Bold))
+                            var bFont=PaintFont(7.5f,FontStyle.Bold);
                             using (var bBrush = new SolidBrush(Color.FromArgb(255, 30, 41, 59)))
                             {
                                 SizeF bSize = g.MeasureString(bText, bFont);
@@ -681,7 +700,7 @@ namespace BtldMapEditor
                             string fName = GameSettings.GetFortName((int)FrontNav.ScalarI64(FrontNav.FortDetail(cell.TriggerFort), 0));
                             string fSymbol = fName.Length > 0 ? fName.Substring(0, Math.Min(2, fName.Length)) : "工";
 
-                            using (var fFont = new Font("Segoe UI", 6.5f, FontStyle.Bold))
+                            var fFont=PaintFont(6.5f,FontStyle.Bold);
                             using (var fBrush = new SolidBrush(Color.FromArgb(220, 71, 85, 105)))
                             {
                                 SizeF fSize = g.MeasureString(fSymbol, fFont);
@@ -716,7 +735,7 @@ namespace BtldMapEditor
                                 else decSymbol = $"D{decId}";
 
                                 string decText = $"{decSymbol}{tileIdx}";
-                                using (var dFont = new Font("Segoe UI", 7.5f, FontStyle.Bold))
+                                var dFont=PaintFont(7.5f,FontStyle.Bold);
                                 using (var dBrush = new SolidBrush(Color.FromArgb(255, 30, 41, 59)))
                                 {
                                     SizeF dSize = g.MeasureString(decText, dFont);
@@ -766,7 +785,7 @@ namespace BtldMapEditor
                             if (hasOffset && _showCellOffsets)
                             {
                                 string offText = $"o:{dx},{dy}";
-                                using (var fFont = new Font("Segoe UI", 6f, FontStyle.Regular))
+                                var fFont=PaintFont(6f,FontStyle.Regular);
                                 using (var fBrush = new SolidBrush(Color.FromArgb(140, 100, 116, 139)))
                                 {
                                     SizeF fSize = g.MeasureString(offText, fFont);
@@ -804,7 +823,7 @@ namespace BtldMapEditor
                                 }
 
                                 string rText = $"R{rpFaction}";
-                                using (var rFont = new Font("Segoe UI", 7.5f, FontStyle.Bold))
+                                var rFont=PaintFont(7.5f,FontStyle.Bold);
                                 using (var rBrush = new SolidBrush(Color.White))
                                 {
                                     SizeF rSize = g.MeasureString(rText, rFont);
@@ -813,7 +832,7 @@ namespace BtldMapEditor
 
                                 if (FrontNav.ScalarI64(rpHit, 2) != 0)
                                 {
-                                    using (var starFont = new Font("Segoe UI", 9, FontStyle.Bold))
+                                    var starFont=PaintFont(9,FontStyle.Bold);
                                     using (var starBrush = new SolidBrush(Color.FromArgb(234, 179, 8)))
                                     {
                                         g.DrawString("★", starFont, starBrush, cx - rBadge * 1.3f, cy - rBadge * 1.3f);
@@ -821,6 +840,7 @@ namespace BtldMapEditor
                                 }
                             }
                         }
+
                     }
                 }
 
@@ -890,7 +910,7 @@ namespace BtldMapEditor
             bool hasGeneral = FrontNav.Has(agent, 11);
             if (hasGeneral)
             {
-                using (var starFont = new Font("Segoe UI", 9, FontStyle.Bold))
+                var starFont=PaintFont(9,FontStyle.Bold);
                 using (var starBrush = new SolidBrush(Color.FromArgb(251, 191, 36)))
                 {
                     g.DrawString("★", starFont, starBrush, cx - size * 0.55f, cy - size * 0.55f);
@@ -1278,10 +1298,13 @@ namespace BtldMapEditor
                 int margin = (int)Math.Ceiling(96 / k);
                 int x = Math.Max(0, left - margin) / step * step;
                 int y = Math.Max(0, top - margin) / step * step;
-                var region = Rectangle.FromLTRB(x, y, Math.Min(cw, right + margin), Math.Min(ch, bottom + margin));
+                // 固定缓冲尺寸和采样相位，平移时可复用重叠区，不因一两个像素反复分配。
+                int width=(int)Math.Ceiling((ClientSize.Width/k+2*margin)/step)*step+step;
+                int height=(int)Math.Ceiling((ClientSize.Height/k+2*margin)/step)*step+step;
+                var region = new Rectangle(x,y,Math.Min(cw-x,width),Math.Min(ch-y,height));
                 bool showBldg = _renderMode == MapRenderMode.All || _renderMode == MapRenderMode.BuildingsOnly;
                 bool showFort = _renderMode == MapRenderMode.All || _renderMode == MapRenderMode.FortificationsOnly;
-                _spriteRenderer.RenderRegion(_spriteDecoded, showBldg, showFort, region, step);
+                _spriteRenderer.RenderRegion(_spriteDecoded, showBldg, showFort, region, step,reuseOverlap:true);
                 _spriteRegion = region;
                 _spriteRegionStep = step;
             }
@@ -1424,17 +1447,22 @@ namespace BtldMapEditor
                 _spriteRenderer = null;
                 _spriteCellHash = null;
                 DropViewCache();
+                DropSceneFrames();
+                foreach(var font in _paintFonts.Values)font.Dispose();
+                _paintFonts.Clear();
+                _githubMark?.Dispose();_githubMark=null;
             }
             base.Dispose(disposing);
         }
 
         protected override void OnMouseWheel(MouseEventArgs e)
         {
-            ((HandledMouseEventArgs)e).Handled = true;
-            if (e.Delta > 0)
-                Radius += 3;
-            else
-                Radius -= 3;
+            if(e is HandledMouseEventArgs handled)handled.Handled=true;
+            if(!HasMap)return;
+            _wheelRemainder+=e.Delta;
+            int notches=_wheelRemainder/SystemInformation.MouseWheelScrollDelta;
+            _wheelRemainder%=SystemInformation.MouseWheelScrollDelta;
+            if(notches!=0)ZoomAt(e.Location,Radius+notches*3);
         }
 
         public int HitTestCell(Point client)
@@ -1567,6 +1595,8 @@ namespace BtldMapEditor
             if (e.Button != MouseButtons.Left) return;
 
             _isMouseDown = true;
+            Capture = true;
+            EditGestureStarted?.Invoke();
             HandleMousePaintOrSelect(e);
             MapMouseDown?.Invoke(this, e);
         }
@@ -1619,6 +1649,30 @@ namespace BtldMapEditor
                 _lastPaintedIndex = -1;
             }
             MapMouseUp?.Invoke(this, e);
+            if (e.Button == MouseButtons.Left)
+            {
+                EditGestureEnded?.Invoke();
+                Capture = false;
+            }
+        }
+
+        protected override void OnMouseCaptureChanged(EventArgs e)
+        {
+            base.OnMouseCaptureChanged(e);
+            if (Capture) return;
+            if(_isPanning)Cursor=Cursors.Default;
+            _isMouseDown = false;
+            _lastPaintedIndex = -1;
+            _isPanning = false;
+            EditGestureEnded?.Invoke();
+        }
+
+        /// <summary>窗口失焦、撤销或其他命令中断拖动时停止继续落笔。</summary>
+        public void StopPainting()
+        {
+            _isMouseDown = false;
+            _lastPaintedIndex = -1;
+            if (!_isPanning) Capture = false;
         }
 
         private void HandleMousePaintOrSelect(MouseEventArgs e)

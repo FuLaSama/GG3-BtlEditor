@@ -63,7 +63,8 @@ public partial class MainEditorForm
     }
 
     bool ConfirmTool(ScriptTool tool) => string.IsNullOrEmpty(tool.Confirmation)
-        || MessageBox.Show(this, tool.Confirmation, tool.Title, MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
+        || MessageBox.Show(this, tool.Confirmation, tool.Title, MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2) == DialogResult.Yes;
 
     int ExecuteTool(string id, ScriptArgs selection)
     {

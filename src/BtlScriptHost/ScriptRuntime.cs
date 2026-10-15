@@ -53,7 +53,7 @@ public sealed partial class ScriptHost
     public ScriptLimits Limits { get; }
     public CancellationToken Cancellation { get; set; }
     /// <summary>供性能诊断：只读调用不产生文档快照。</summary>
-    public int SnapshotCount { get; private set; }
+    public int SnapshotCount => Document?.Editing.SnapshotCount ?? 0;
 
     void EnsureIdle()
     {
@@ -100,6 +100,8 @@ public sealed partial class ScriptHost
     void ExecuteSource(string code, string name)
     {
         StartBudget();
+        _formatSourceHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(code.Replace("\r\n", "\n"))));
         _registering = true;
         try { Invoke(_script.LoadString(code, null, name)); }
         finally { _registering = false; _running = false; }
@@ -107,7 +109,7 @@ public sealed partial class ScriptHost
 
     void RequireRegistration()
     {
-        if (!_registering) throw new FrontEditException("action/resolve 只能在加载脚本时登记");
+        if (!_registering) throw new FrontEditException("只能在加载脚本时登记定义或扩展");
     }
 
     void RecoverRuntime()
@@ -121,6 +123,10 @@ public sealed partial class ScriptHost
         _actions.Clear();
         _resolvers.Clear();
         _tools.Clear();
+        _formatSchemas.Clear();
+        _payloadCodecs.Clear();
+        _insideCodec = false;
+        _formatContexts.Clear();
         ResetGameOperation();
         CreateRuntime();
         var cancellation = Cancellation;
@@ -134,6 +140,8 @@ public sealed partial class ScriptHost
             _actions.Clear();
             _resolvers.Clear();
             _tools.Clear();
+            _formatSchemas.Clear();
+            _payloadCodecs.Clear();
             throw new FrontEditException("脚本运行时恢复失败，请重新加载布局");
         }
         finally
@@ -199,10 +207,15 @@ public sealed partial class ScriptHost
         {
             try
             {
+                if (_insideCodec && !name.StartsWith("editor.binary.", StringComparison.Ordinal)
+                    && name is not ("editor.band" or "editor.bor" or "editor.bxor" or "editor.lshift" or "editor.rshift"))
+                    throw new FrontEditException("编解码器只能处理传入值，不能访问关卡、状态或其他编解码器");
                 if (_registering && name != "editor.action" && name != "editor.resolve" && name != "editor.tool"
                     && name != "editor.band" && name != "editor.bor" && name != "editor.bxor"
                     && name != "editor.lshift" && name != "editor.rshift" && name != "editor.remap_cell"
-                    && name != "editor.data.row")
+                    && name != "editor.data.row" && name != "editor.format.schema" && name != "editor.format.codec"
+                    && name != "editor.internal.check_registration"
+                    && !name.StartsWith("editor.binary.", StringComparison.Ordinal))
                     throw new FrontEditException("加载阶段只能定义工具和登记动作，不能访问关卡或会话状态");
                 return body(context, args);
             }
@@ -225,6 +238,7 @@ public sealed partial class ScriptHost
         }
         editor.Set("api_version", DynValue.NewNumber(2));
         editor.Set("modules", DynValue.NewTable(new Table(_script)));
+        InstallFormatApi(editor);
         InstallToolsApi(editor);
 
         var data = new Table(_script);

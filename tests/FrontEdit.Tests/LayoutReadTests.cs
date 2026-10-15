@@ -44,7 +44,7 @@ public class LayoutReadTests
         var doc = DocWithAgents();
         var host = new ScriptHost();
         host.Load(doc);
-        EditorScripts.Load(host, "unit/基础部队信息.lua");
+        EditorScripts.Load(host, "unit/配置表单.lua", "unit/基础部队信息.lua");
         Assert.Equal(1, host.ResolveIndex("unit", 1));
         Assert.Null(host.ResolveIndex("unit", 4));
         Assert.Equal(0L, Convert.ToInt64(host.ReadBind("/6/0", "/0.6", host.ResolveIndex("unit", 1), 1, "number", null, null)));

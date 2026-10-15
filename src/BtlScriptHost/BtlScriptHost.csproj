@@ -8,5 +8,7 @@
   <ItemGroup>
     <ProjectReference Include="..\BtlCore\BtlCore.csproj" />
     <PackageReference Include="MoonSharp" Version="2.0.0" />
+    <EmbeddedResource Include="..\..\EditorLayout\fields\unit.json" LogicalName="fields.unit.json" />
+    <EmbeddedResource Include="..\..\EditorLayout\fields\site.json" LogicalName="fields.site.json" />
   </ItemGroup>
 </Project>

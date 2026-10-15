@@ -4,7 +4,7 @@ namespace BtlCore.Scripting
 {
     public static class LayoutLoader
     {
-        public static LayoutLoadResult Load(string builtinDir, string userDir)
+        public static LayoutLoadResult Load(string builtinDir, string userDir, BtlCore.Fb.SchemaContext context = null)
         {
             var result = new LayoutLoadResult { Bundle = new LayoutBundle() };
             if (string.IsNullOrEmpty(builtinDir) || !File.Exists(Path.Combine(builtinDir, "layout.xml")))
@@ -20,6 +20,9 @@ namespace BtlCore.Scripting
                     LoadRoot(userDir, result.Bundle, result.Errors, userOverride: true);
                 if (!string.IsNullOrEmpty(userDir) && Directory.Exists(userDir))
                     LoadLooseScripts(userDir, result.Bundle, result.Errors, includeScripts: !hasUserLayout);
+                result.Bundle.Fields.ValidateReferences();
+                foreach (var tab in result.Bundle.Tabs)
+                    if (tab.Page != null) result.Bundle.Fields.Bind(tab.Page, context ?? BtlCore.Fb.SoftSchema.DefaultContext);
             }
             catch (Exception ex)
             {
@@ -76,6 +79,13 @@ namespace BtlCore.Scripting
                     LoadTabs(dir, child, bundle, errors, userOverride, layoutPath);
                 else if (child.LocalName == "scripts")
                     LoadScripts(dir, child, bundle, errors, layoutPath);
+                else if (child.LocalName == "fields")
+                {
+                    RejectUnknown(child, new[] { "src" }, layoutPath, errors);
+                    string source = ((XmlElement)child).GetAttribute("src");
+                    if (string.IsNullOrWhiteSpace(source)) throw new InvalidDataException(layoutPath + ": fields 缺少 src");
+                    bundle.Fields = bundle.Fields.Overlay(FieldCatalog.Parse(File.ReadAllText(Path.Combine(dir, source))));
+                }
                 else
                     errors.Add(layoutPath + ": 未知元素 " + child.LocalName);
             }
@@ -155,7 +165,7 @@ namespace BtlCore.Scripting
 
         static LayoutSection LoadSection(XmlElement el, string path, List<string> errors)
         {
-            RejectUnknown(el, new[] { "id", "title", "kind", "bind", "resolve", "text", "filter" }, path, errors);
+            RejectUnknown(el, new[] { "id", "title", "kind", "bind", "resolve", "text", "filter", "collapsible", "collapsed", "model", "selection", "omit", "labels", "browse", "prepare" }, path, errors);
             var section = new LayoutSection
             {
                 Title = el.GetAttribute("title"),
@@ -164,9 +174,23 @@ namespace BtlCore.Scripting
                 Resolve = el.GetAttribute("resolve"),
                 Id = el.GetAttribute("id"),
                 Text = el.GetAttribute("text"),
-                Filter = el.GetAttribute("filter")
+                Filter = el.GetAttribute("filter"),
+                Collapsible = Flag(el,"collapsible",path), Collapsed = Flag(el,"collapsed",path),
+                Model = el.GetAttribute("model"), Selection = el.GetAttribute("selection"), Omit = el.GetAttribute("omit"),
+                Browse = Flag(el,"browse",path), Prepare = el.GetAttribute("prepare")
             };
-            if (section.Kind != "form" && section.Kind != "list" && section.Kind != "tree" && section.Kind != "palettes" && section.Kind != "label")
+            if (section.Collapsed && !section.Collapsible) throw new InvalidDataException(path+": collapsed 需要 collapsible=true");
+            if (section.Browse && (section.Kind!="details" || string.IsNullOrEmpty(section.Resolve) && string.IsNullOrEmpty(section.Selection)))
+                throw new InvalidDataException(path+": browse 需要 details 栏目及 resolve 或 selection");
+            if (!string.IsNullOrEmpty(section.Prepare) && (section.Kind!="details" || section.Browse || string.IsNullOrEmpty(section.Resolve)))
+                throw new InvalidDataException(path+": prepare 需要按地图定位的 details 栏目，不能与 browse 混用");
+            if (section.Kind == "details")
+            {
+                if (string.IsNullOrEmpty(section.Model) || string.IsNullOrEmpty(section.Bind) || string.IsNullOrEmpty(el.GetAttribute("labels")))
+                    throw new InvalidDataException(path+": details 需要 model、bind 和 labels");
+                section.Labels = ResearchLabels.Load(Path.GetFullPath(Path.Combine(Path.GetDirectoryName(path)!,el.GetAttribute("labels"))));
+            }
+            if (section.Kind != "form" && section.Kind != "list" && section.Kind != "tree" && section.Kind != "palettes" && section.Kind != "label" && section.Kind != "details")
                 errors.Add(path + ": 不支持的栏目 " + section.Kind);
             foreach (XmlNode child in el.ChildNodes)
             {
@@ -210,8 +234,10 @@ namespace BtlCore.Scripting
                     continue;
                 }
                 var el = (XmlElement)child;
-                RejectUnknown(el, new[] { "header", "bind" }, path, errors);
-                section.Columns.Add(new LayoutColumn { Header = el.GetAttribute("header"), Bind = el.GetAttribute("bind") });
+                RejectUnknown(el, new[] { "header", "bind", "field" }, path, errors);
+                if (el.HasAttribute("field") && (string.IsNullOrWhiteSpace(el.GetAttribute("field")) || el.HasAttribute("bind")))
+                    errors.Add(path + ": column 的 field 必须非空，且不能与 bind 同时声明");
+                section.Columns.Add(new LayoutColumn { Header = el.GetAttribute("header"), Bind = el.GetAttribute("bind"), FieldKey = el.GetAttribute("field") });
             }
         }
 
@@ -232,11 +258,22 @@ namespace BtlCore.Scripting
 
         static LayoutField LoadField(XmlElement el, string path, List<string> errors)
         {
-            RejectUnknown(el, new[] { "id", "label", "widget", "type", "action", "bind", "shift", "width", "lookup", "when", "scope", "default", "min", "max", "readonly" }, path, errors);
+            RejectUnknown(el, new[] { "id", "label", "widget", "type", "action", "bind", "field", "shift", "width", "lookup", "when", "scope", "default", "min", "max", "readonly", "nullable", "tip" }, path, errors);
+            if (el.HasAttribute("field") && new[] { "bind", "type", "shift", "width", "action" }.Any(el.HasAttribute))
+                errors.Add(path + ": field 不能与 bind/type/shift/width/action 同时声明。");
+            if (el.HasAttribute("field") && string.IsNullOrWhiteSpace(el.GetAttribute("field")))
+                errors.Add(path + ": field 不能为空。");
+            string nullable = el.GetAttribute("nullable");
+            if (nullable.Length != 0 && nullable != "true" && nullable != "false")
+                errors.Add(path + ": nullable 需要 true 或 false");
+            if (nullable == "true" && el.GetAttribute("widget") != "check")
+                errors.Add(path + ": nullable 仅用于 check 字段");
             return new LayoutField
             {
+                FieldKey = el.GetAttribute("field"),
                 Id = el.GetAttribute("id"),
                 Label = el.GetAttribute("label"),
+                Tip = el.GetAttribute("tip"),
                 Widget = string.IsNullOrEmpty(el.GetAttribute("widget")) ? "number" : el.GetAttribute("widget"),
                 Type = el.GetAttribute("type"),
                 Action = el.GetAttribute("action"),
@@ -249,17 +286,29 @@ namespace BtlCore.Scripting
                 Default = el.GetAttribute("default"),
                 Minimum = OptionalDecimal(el.GetAttribute("min")),
                 Maximum = OptionalDecimal(el.GetAttribute("max")),
-                ReadOnly = el.GetAttribute("readonly") == "true"
+                ReadOnly = el.GetAttribute("readonly") == "true",
+                Nullable = nullable == "true"
             };
         }
 
-        static LayoutGroup LoadGroup(XmlElement el, LayoutSection section, string path, List<string> errors)
+        static bool Flag(XmlElement el,string name,string path)
         {
-            RejectUnknown(el, new[] { "title" }, path, errors);
-            var group = new LayoutGroup { Title = el.GetAttribute("title") };
+            string value=el.GetAttribute(name);
+            if(value.Length!=0 && value!="true" && value!="false") throw new InvalidDataException(path+": "+name+" 需要 true 或 false");
+            return value=="true";
+        }
+
+        static LayoutGroup LoadGroup(XmlElement el, LayoutSection section, string path, List<string> errors, int depth=0)
+        {
+            if(depth>16) throw new InvalidDataException(path+": 分组嵌套过深");
+            RejectUnknown(el, new[] { "id", "title", "collapsible", "collapsed" }, path, errors);
+            var group = new LayoutGroup { Id=el.GetAttribute("id"),Title = el.GetAttribute("title"),
+                Collapsible=Flag(el,"collapsible",path),Collapsed=Flag(el,"collapsed",path) };
+            if(group.Collapsed && !group.Collapsible) throw new InvalidDataException(path+": collapsed 需要 collapsible=true");
             foreach (XmlNode child in el.ChildNodes)
             {
                 if (child.NodeType != XmlNodeType.Element) continue;
+                if(child.LocalName=="group") { group.Groups.Add(LoadGroup((XmlElement)child,section,path,errors,depth+1)); continue; }
                 if (child.LocalName != "row")
                 {
                     errors.Add(path + ": 未知元素 " + child.LocalName);

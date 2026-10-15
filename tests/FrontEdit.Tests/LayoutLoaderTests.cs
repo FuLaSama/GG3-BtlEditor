@@ -47,6 +47,8 @@ public class LayoutLoaderTests
         Assert.Equal("特种部队配置", unit.Groups[3].Title);
         Assert.Contains(unit.Fields, f => f.Id == "hp" && f.Bind == "/0.6");
         Assert.Contains(unit.Fields, f => f.Id == "behavior_0" && f.When == "behavior");
+        Assert.Contains(unit.Fields, f => f.Id == "general_active" && f.Nullable);
+        Assert.Contains(unit.Fields, f => f.Id == "general" && !f.Nullable);
 
         var site = result.Bundle.Tabs.Find(t => t.Id == "site").Page;
         Assert.Equal("建筑配置", site.Sections[0].Title);
@@ -73,6 +75,8 @@ public class LayoutLoaderTests
             File.WriteAllText(Path.Combine(user, "layout.xml"),
                 "<?xml version=\"1.0\" encoding=\"utf-8\"?><editorLayout format=\"1\"><tabs><tab id=\"stage\" title=\"用户页\" page=\"pages/stage.xml\"/></tabs></editorLayout>");
             File.Copy(Path.Combine(root, "EditorLayout", "pages", "stage.xml"), Path.Combine(user, "pages", "stage.xml"));
+            Directory.CreateDirectory(Path.Combine(user,"fields"));
+            File.Copy(Path.Combine(root,"EditorLayout/fields/research-labels.json"),Path.Combine(user,"fields/research-labels.json"));
             var over = LayoutLoader.Load(Path.Combine(root, "EditorLayout"), user);
             Assert.True(over.Ok, string.Join("\n", over.Errors));
             Assert.Equal("用户页", over.Bundle.Tabs.Find(t => t.Id == "stage").Title);

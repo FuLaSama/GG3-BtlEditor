@@ -12,6 +12,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Assets\GitHub.png" LogicalName="BtldMapEditor.Assets.GitHub.png" />
     <!-- 正式 BtlCore：BTL↔Front。显示用名表/贴图在本工程内。 -->
     <ProjectReference Include="..\BtlCore\BtlCore.csproj" />
     <ProjectReference Include="..\BtlScriptHost\BtlScriptHost.csproj" />

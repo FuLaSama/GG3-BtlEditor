@@ -269,7 +269,7 @@ namespace BtlCore.Scripting
                 if (vec == null) return false;
                 return AcceptCountryVec(vec, create);
             }
-            if (!FrontPath.TryGetVector(Document, path, create, out vec)) return false;
+            if (!Paths.TryGetVector(Document, path, create, out vec)) return false;
             return AcceptCountryVec(vec, create);
         }
 
@@ -285,6 +285,9 @@ namespace BtlCore.Scripting
             bool field10 = Document.Root.F.TryGetValue(10, out var node) && ReferenceEquals(node, vec);
             if (field10)
             {
+                if (!PackedJsonStream.EncIsPackedJson(vec.Enc)
+                    && (vec.V.Any(item => item is not JsonObject) || !string.IsNullOrEmpty(vec.Enc)))
+                    throw new FrontEditException("行为树载荷未能解码或类型暂不支持；原字节保留，不能作为树列表编辑。");
                 if (write)
                 {
                     RequireWrite();

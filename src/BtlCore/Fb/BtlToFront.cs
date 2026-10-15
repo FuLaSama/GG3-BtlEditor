@@ -13,7 +13,7 @@
  * 原版里未用的空嵌套表指针有时落在 00 00 00 00 填充上（不是合法表）。
  * 这种槽按缺省跳过，不要发明 {}，否则写回会变成真的空表，游戏不认。
  *
- * Root/10 的 u8 向量若是国家行为树流，调用 PackedJsonStream 解成 JSON，仍挂在该向量上。
+ * Root/10 的 u8 向量为 FlexBuffers 共用树库；解成 JSON 并保留原始 payload。
  */
 using System.Text;
 using BtlCore.Front;
@@ -27,9 +27,12 @@ namespace BtlCore.Fb
         Error
     }
 
-    /// <summary>转换过程中的一条说明。Error 才应阻止保存；Warning 仍可编辑。</summary>
+    /// <summary>转换诊断。编辑／导出需核对 ConvertResult.HasUnresolvedData，不能仅忽略 Warning。</summary>
     public sealed class ConvertIssue
     {
+        public string Code { get; init; } = "conversion";
+        public bool IsGuess { get; init; }
+        public bool BlocksRebuild => IsGuess || Severity != IssueSeverity.Info;
         public IssueSeverity Severity { get; init; }
         public string Path { get; init; }
         public string Message { get; init; }
@@ -41,8 +44,9 @@ namespace BtlCore.Fb
     {
         public BtlFrontDocument Document { get; set; }
         public List<ConvertIssue> Issues { get; } = new List<ConvertIssue>();
-        /// <summary>只要 Root 表读出来就算成功，Issues 里仍可能有 Warning。</summary>
-        public bool Ok => Document?.Root != null;
+        public bool Ok => Document?.Root != null && !Issues.Any(i => i.Severity == IssueSeverity.Error);
+        /// <summary>容错或未知类型猜测不能被静默重建为新文件。</summary>
+        public bool HasUnresolvedData => Issues.Any(i => i.BlocksRebuild);
     }
 
     public static class BtlToFront
@@ -51,12 +55,19 @@ namespace BtlCore.Fb
         const int MaxVectorElems = 2_000_000;
 
         /// <summary>读文件。失败也返回空 Root，方便编辑器弹 Issue 而不是直接崩。</summary>
-        public static ConvertResult FromFile(string path) => FromBytes(File.ReadAllBytes(path));
+        public static ConvertResult FromFile(string path, SchemaContext context = null) => FromBytes(File.ReadAllBytes(path), context);
 
-        public static ConvertResult FromBytes(byte[] data)
+        public static ConvertResult FromBytes(byte[] data, SchemaContext context = null)
         {
+            context ??= SoftSchema.DefaultContext;
             var result = new ConvertResult();
-            var ctx = new Reader(data, result.Issues);
+            BtlFrontDocument Document(BtlTable root) => new()
+            {
+                Context = context, Root = root,
+                SourceIssues = Array.AsReadOnly(result.Issues.ToArray()),
+                SourceSha256 = data == null ? null : Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(data))
+            };
+            var ctx = new Reader(data, result.Issues, context);
 
             if (data == null || data.Length < 8)
             {
@@ -66,12 +77,12 @@ namespace BtlCore.Fb
                     Path = "/",
                     Message = "文件过短，无法作为 FlatBuffers BTL"
                 });
-                result.Document = new BtlFrontDocument { Root = BtlFrontJson.NewTable() };
+                result.Document = Document(BtlFrontJson.NewTable());
                 return result;
             }
 
             int rootOff = ctx.ReadI32(0);
-            if (!ctx.InRange(rootOff, 4))
+            if (rootOff < 4 || !ctx.LooksLikeTable(rootOff))
             {
                 result.Issues.Add(new ConvertIssue
                 {
@@ -79,11 +90,11 @@ namespace BtlCore.Fb
                     Path = "/",
                     Message = $"Root 偏移无效: 0x{rootOff:X}"
                 });
-                result.Document = new BtlFrontDocument { Root = BtlFrontJson.NewTable() };
+                result.Document = Document(BtlFrontJson.NewTable());
                 return result;
             }
 
-            var root = ctx.ReadTable(rootOff, SoftSchema.RootType, "/", 0);
+            var root = ctx.ReadTable(rootOff, context.RootType, "/", 0);
             if (root == null)
             {
                 result.Issues.Add(new ConvertIssue
@@ -95,19 +106,22 @@ namespace BtlCore.Fb
                 root = BtlFrontJson.NewTable();
             }
 
-            result.Document = new BtlFrontDocument { FormatVersion = 1, Root = root };
+            result.Document = Document(root);
             return result;
         }
 
         sealed class Reader
         {
+            readonly SchemaContext _context;
             readonly byte[] _d;
             readonly List<ConvertIssue> _issues;
             readonly HashSet<int> _visiting = new HashSet<int>();
-            readonly Dictionary<int, BtlTable> _done = new Dictionary<int, BtlTable>();
+            readonly Dictionary<(int Position, string Context), BtlTable> _done = new();
+            int _nodeBudget = 500_000;
 
-            public Reader(byte[] data, List<ConvertIssue> issues)
+            public Reader(byte[] data, List<ConvertIssue> issues, SchemaContext context)
             {
+                _context = context;
                 _d = data;
                 _issues = issues;
             }
@@ -128,10 +142,38 @@ namespace BtlCore.Fb
             public long ReadI64(int pos) => BitConverter.ToInt64(_d, pos);
 
             void Warn(string path, string msg) =>
-                _issues.Add(new ConvertIssue { Severity = IssueSeverity.Warning, Path = path, Message = msg });
+                AddIssue(IssueSeverity.Warning, path, msg);
+
+            void Guess(string path, string msg) => AddIssue(IssueSeverity.Info, path, msg, true);
 
             void Info(string path, string msg) =>
-                _issues.Add(new ConvertIssue { Severity = IssueSeverity.Info, Path = path, Message = msg });
+                AddIssue(IssueSeverity.Info, path, msg);
+
+            void AddIssue(IssueSeverity severity, string path, string msg, bool guess = false)
+            {
+                if (_issues.Count < 1024) _issues.Add(new ConvertIssue
+                    { Code = guess ? "unknown_encoding" : "read", IsGuess = guess, Severity = severity, Path = path, Message = msg });
+                else if ((severity != IssueSeverity.Info || guess) && _issues.All(i => !i.BlocksRebuild))
+                    _issues[^1] = new ConvertIssue { Code = "diagnostic_limit", Severity = IssueSeverity.Warning, Path = path, Message = "诊断过多；" + msg };
+            }
+
+            bool Budget(string path)
+            {
+                if (_nodeBudget-- > 0) return true;
+                Warn(path, "超过读取节点预算，保留原文件供查看，停止展开");
+                return false;
+            }
+
+            bool Offset(int pos, out int target)
+            {
+                target = -1;
+                if (!InRange(pos, 4)) return false;
+                uint rel = ReadU32(pos);
+                long address = (long)pos + rel;
+                if (rel == 0 || address > int.MaxValue || !InRange((int)address, 4)) return false;
+                target = (int)address;
+                return true;
+            }
 
             public BtlTable ReadTable(int pos, string context, string path, int depth)
             {
@@ -147,32 +189,33 @@ namespace BtlCore.Fb
                     return null;
                 }
 
-                // 同一物理地址只建一棵节点，避免共享表被复制成两份。
-                if (_done.TryGetValue(pos, out var cached))
-                    return cached;
-
-                if (!_visiting.Add(pos))
+                if (_visiting.Contains(pos))
                 {
                     Warn(path, $"检测到环引用 @0x{pos:X}，跳过");
-                    return BtlFrontJson.NewTable();
+                    return null;
                 }
+                if (_done.TryGetValue((pos, context ?? ""), out var cached)) return cached;
+                if (!Budget(path)) return null;
+                _visiting.Add(pos);
 
                 try
                 {
                     int vtableSoff = ReadI32(pos);
-                    int vtablePos = pos - vtableSoff;
-                    if (!InRange(vtablePos, 4))
+                    long vtAddress = (long)pos - vtableSoff;
+                    if (vtableSoff == 0 || vtAddress < 0 || vtAddress > int.MaxValue || !InRange((int)vtAddress, 4))
                     {
                         Warn(path, $"vtable 无效 @0x{pos:X}");
-                        return BtlFrontJson.NewTable();
+                        return null;
                     }
+                    int vtablePos = (int)vtAddress;
 
                     ushort vtableSize = ReadU16(vtablePos);
                     ushort objectSize = ReadU16(vtablePos + 2);
-                    if (vtableSize < 4 || (vtableSize & 1) != 0)
+                    if (vtableSize < 4 || (vtableSize & 1) != 0 || !InRange(vtablePos, vtableSize)
+                        || objectSize < 4 || !InRange(pos, objectSize))
                     {
-                        Warn(path, $"vtable 尺寸异常 size={vtableSize}，尝试继续");
-                        if (vtableSize < 4) return BtlFrontJson.NewTable();
+                        Warn(path, $"vtable 或对象范围无效 size={vtableSize}, objectSize={objectSize}");
+                        return null;
                     }
 
                     int numSlots = (vtableSize - 4) / 2;
@@ -192,7 +235,6 @@ namespace BtlCore.Fb
                     }
 
                     var table = BtlFrontJson.NewTable();
-                    _done[pos] = table;
 
                     for (int fieldId = 0; fieldId < numSlots; fieldId++)
                     {
@@ -200,7 +242,7 @@ namespace BtlCore.Fb
                         if (off == 0) continue;
 
                         int fieldPos = pos + off;
-                        if (!InRange(fieldPos, 1))
+                        if (off < 4 || off >= objectSize || !InRange(fieldPos, 1))
                         {
                             Warn($"{path}/{fieldId}", $"字段偏移越界 off={off}");
                             continue;
@@ -209,7 +251,21 @@ namespace BtlCore.Fb
                         int slotWidth = EstimateSlotWidth(offsets, fieldId, objectSize, off);
                         string fieldPath = path == "/" ? "/" + fieldId : path + "/" + fieldId;
 
-                        SoftSchema.TryGet(context, fieldId, out FieldHint hint);
+                        _context.TryGet(context, fieldId, out FieldHint hint);
+                        int required = hint?.Kind switch
+                        {
+                            FieldKind.Bool => 1,
+                            FieldKind.Scalar => SizeOf(hint.ScalarT),
+                            FieldKind.Struct => hint.StructSize,
+                            FieldKind.Table or FieldKind.Vector or FieldKind.String => 4,
+                            _ => Math.Min(slotWidth, 4)
+                        };
+                        if (required > objectSize - off || required > slotWidth)
+                        {
+                            Warn(fieldPath, "字段尺寸超出所属槽／对象，未读取替代值");
+                            continue;
+                        }
+                        if (!Budget(fieldPath)) break;
                         BtlNode node = null;
                         try
                         {
@@ -225,6 +281,7 @@ namespace BtlCore.Fb
                             table.F[fieldId] = node;
                     }
 
+                    _done[(pos, context ?? "")] = table;
                     return table;
                 }
                 finally
@@ -240,12 +297,11 @@ namespace BtlCore.Fb
             static int EstimateSlotWidth(ushort[] offsets, int fieldId, ushort objectSize, ushort off)
             {
                 int next = objectSize > 0 ? objectSize : off + 4;
-                for (int j = fieldId + 1; j < offsets.Length; j++)
+                for (int j = 0; j < offsets.Length; j++)
                 {
                     if (offsets[j] != 0 && offsets[j] > off)
                     {
-                        next = offsets[j];
-                        break;
+                        next = Math.Min(next, offsets[j]);
                     }
                 }
                 int w = next - off;
@@ -267,20 +323,19 @@ namespace BtlCore.Fb
                             return ReadScalarAt(fieldPos, hint.ScalarT ?? WidthToScalarT(slotWidth),
                                 SizeOf(hint.ScalarT ?? WidthToScalarT(slotWidth)), path);
                         case FieldKind.String:
-                            return ReadStringField(fieldPos, path) ?? FallbackScalar(fieldPos, slotWidth, path);
+                            return ReadStringField(fieldPos, path);
                         case FieldKind.Table:
                             // null = 槽位相对指针为 0（缺省），或指针落在零填充 / 不像表（不要发明 {}）
                             return ReadTableField(fieldPos, hint.ChildTable, path, depth);
                         case FieldKind.Struct:
-                            return ReadInlineStruct(fieldPos, hint.StructMembers, path)
-                                   ?? FallbackOpaqueStruct(fieldPos, slotWidth, path);
+                            return ReadInlineStruct(fieldPos, hint.StructMembers, path);
                         case FieldKind.Vector:
-                            return ReadVectorField(fieldPos, hint, path, depth)
-                                   ?? FallbackScalar(fieldPos, slotWidth, path);
+                            return ReadVectorField(fieldPos, hint, path, depth);
                     }
                 }
 
                 // 无提示：启发式
+                Guess(path, "未知字段：编辑文档暂用启发式解释，原始查看不采用此猜测");
                 if (slotWidth == 4 || slotWidth >= 4)
                 {
                     var asTable = TryAsTablePointer(fieldPos, path, depth);
@@ -303,8 +358,8 @@ namespace BtlCore.Fb
             {
                 if (!InRange(fieldPos, 4)) return null;
                 int rel = ReadI32(fieldPos);
-                if (rel == 0) return null; // FlatBuffers 缺省：字段未写出
-                int abs = fieldPos + rel;
+                if (rel == 0) { Warn(path, "已写出表槽的相对偏移为 0，不能等同于未写出的字段"); return null; }
+                if (!Offset(fieldPos, out int abs)) { Warn(path, "表相对指针越界，跳过"); return null; }
                 if (!LooksLikeTable(abs))
                 {
                     // 原版常见：TriggerEventSub3 等未用槽的相对指针落在相邻对象之间的零填充上。
@@ -326,9 +381,9 @@ namespace BtlCore.Fb
                 if (!InRange(fieldPos, 4)) return null;
                 int rel = ReadI32(fieldPos);
                 if (rel == 0) return null;
-                int abs = fieldPos + rel;
+                if (!Offset(fieldPos, out int abs)) return null;
                 if (!LooksLikeTable(abs)) return null;
-                Info(path, "启发式识别为 table");
+                Guess(path, "启发式识别为 table");
                 return ReadTable(abs, "", path, depth);
             }
 
@@ -336,8 +391,8 @@ namespace BtlCore.Fb
             {
                 if (!InRange(fieldPos, 4)) return null;
                 int rel = ReadI32(fieldPos);
-                if (rel == 0) return null;
-                int abs = fieldPos + rel;
+                if (rel == 0) { Warn(path, "已写出字符串槽的相对偏移为 0"); return null; }
+                if (!Offset(fieldPos, out int abs)) { Warn(path, "字符串相对指针越界"); return null; }
                 if (!TryReadString(abs, out string s))
                 {
                     Warn(path, "字符串无效，跳过");
@@ -351,13 +406,13 @@ namespace BtlCore.Fb
                 if (!InRange(fieldPos, 4)) return null;
                 int rel = ReadI32(fieldPos);
                 if (rel == 0) return null;
-                int abs = fieldPos + rel;
+                if (!Offset(fieldPos, out int abs)) return null;
                 if (!TryReadString(abs, out string s)) return null;
                 if (s.Length > 4096) return null;
                 // 拒绝大量不可打印字符
                 int bad = s.Count(c => c < 32 && c != '\t' && c != '\n' && c != '\r');
                 if (bad > s.Length / 4 && s.Length > 0) return null;
-                Info(path, "启发式识别为 string");
+                Guess(path, "启发式识别为 string");
                 return BtlFrontJson.Scalar("string", s);
             }
 
@@ -365,8 +420,8 @@ namespace BtlCore.Fb
             {
                 if (!InRange(fieldPos, 4)) return null;
                 int rel = ReadI32(fieldPos);
-                if (rel == 0) return null;
-                int abs = fieldPos + rel;
+                if (rel == 0) { Warn(path, "已写出向量槽的相对偏移为 0"); return null; }
+                if (!Offset(fieldPos, out int abs)) { Warn(path, "向量相对指针越界"); return null; }
                 return ReadVectorAt(abs, hint, path, depth);
             }
 
@@ -375,7 +430,7 @@ namespace BtlCore.Fb
                 if (!InRange(fieldPos, 4)) return null;
                 int rel = ReadI32(fieldPos);
                 if (rel == 0) return null;
-                int abs = fieldPos + rel;
+                if (!Offset(fieldPos, out int abs)) return null;
                 if (!InRange(abs, 4)) return null;
                 int count = ReadI32(abs);
                 if (count < 0 || count > MaxVectorElems) return null;
@@ -393,11 +448,11 @@ namespace BtlCore.Fb
                         int ep = abs + 4 + i * 4;
                         if (!InRange(ep, 4)) break;
                         int er = ReadI32(ep);
-                        if (er != 0 && LooksLikeTable(ep + er)) ok++;
+                        if (er != 0 && Offset(ep, out int sampleAt) && LooksLikeTable(sampleAt)) ok++;
                     }
                     if (ok == sample && sample > 0)
                     {
-                        Info(path, "启发式识别为 vector<table>");
+                        Guess(path, "启发式识别为 vector<table>");
                         var hint = new FieldHint { Kind = FieldKind.Vector, VectorElem = "table", VectorElemTable = "" };
                         return ReadVectorAt(abs, hint, path, depth);
                     }
@@ -406,7 +461,7 @@ namespace BtlCore.Fb
                 // 标量 u8 向量（含空）
                 if (InRange(abs + 4, count))
                 {
-                    Info(path, "启发式识别为 vector<u8>");
+                    Guess(path, "启发式识别为 vector<u8>");
                     var hint = new FieldHint { Kind = FieldKind.Vector, VectorElem = "u8" };
                     return ReadVectorAt(abs, hint, path, depth);
                 }
@@ -442,6 +497,7 @@ namespace BtlCore.Fb
                 {
                     for (int i = 0; i < count; i++)
                     {
+                        if (!Budget(path)) break;
                         int ep = data + i * 4;
                         string ip = path + "/i" + i;
                         if (!InRange(ep, 4))
@@ -452,11 +508,11 @@ namespace BtlCore.Fb
                         int er = ReadI32(ep);
                         if (er == 0)
                         {
+                            Warn(ip, "表向量元素相对偏移为 0，当前文档只保留占位，不能安全重建");
                             vec.V.Add(BtlFrontJson.NewTable());
                             continue;
                         }
-                        int abs = ep + er;
-                        if (!LooksLikeTable(abs))
+                        if (!Offset(ep, out int abs) || !LooksLikeTable(abs))
                         {
                             Warn(ip, $"坏表元素 @0x{abs:X}，插入空表");
                             vec.V.Add(BtlFrontJson.NewTable());
@@ -472,12 +528,13 @@ namespace BtlCore.Fb
                 {
                     for (int i = 0; i < count; i++)
                     {
+                        if (!Budget(path)) break;
                         int ep = data + i * 4;
                         string ip = path + "/i" + i;
                         if (!InRange(ep, 4)) { Warn(ip, "截断"); break; }
                         int er = ReadI32(ep);
-                        if (er == 0) { vec.V.Add(""); continue; }
-                        if (!TryReadString(ep + er, out string s))
+                        if (er == 0) { Warn(ip, "字符串向量元素相对偏移为 0，不能安全重建"); vec.V.Add(""); continue; }
+                        if (!Offset(ep, out int stringAt) || !TryReadString(stringAt, out string s))
                         {
                             Warn(ip, "坏字符串，用空串");
                             vec.V.Add("");
@@ -510,6 +567,7 @@ namespace BtlCore.Fb
                         foreach (var m in members) vec.StructLayout.Add(m.T);
                         for (int i = 0; i < count; i++)
                         {
+                            if (!Budget(path)) break;
                             var st = ReadInlineStruct(data + i * stride, members, path + "/i" + i);
                             if (st != null) vec.V.Add(st);
                             else
@@ -532,13 +590,14 @@ namespace BtlCore.Fb
                 }
                 for (int i = 0; i < count; i++)
                 {
+                    if (!Budget(path)) break;
                     var sc = ReadScalarAt(data + i * esz, elem, esz, path + "/i" + i);
                     vec.V.Add(sc?.V ?? 0);
                 }
 
                 // 只解 Root 字段 10。RegionInfo 里也有空的 00 00 28 01 字节向量，不能当行为树解。
                 if (elem == "u8" && path == "/10" && PackedJsonStream.TryUnpackVector(vec))
-                    Info(path, $"国家行为树 JSON-like 打包已解出 {vec.V.Count} 个对象（enc={PackedJsonStream.EncName}）");
+                    Info(path, $"FlexBuffers 共用树库已解出 {vec.V.Count} 个对象，保留原字节（enc={PackedJsonStream.EncName}）");
 
                 return vec;
             }
@@ -574,7 +633,7 @@ namespace BtlCore.Fb
                     if (width <= 0) return null;
                     Warn(path, "不透明 struct 截断到文件尾");
                 }
-                Info(path, $"未知内联块按 struct<u8×{width}>");
+                Guess(path, $"未知内联块按 struct<u8×{width}>");
                 var st = new BtlStruct { T = "struct" };
                 for (int i = 0; i < width; i++)
                 {
@@ -589,7 +648,7 @@ namespace BtlCore.Fb
                 if (!InRange(pos, size))
                 {
                     Warn(path, $"标量越界 t={t}");
-                    return BtlFrontJson.Scalar(t, 0);
+                    return null;
                 }
 
                 object v = t switch
@@ -626,20 +685,21 @@ namespace BtlCore.Fb
             /// 对象头 4 字节像不像指向前方 vtable 的 soffset：
             /// vtable 尺寸偶、合理范围，objectSize 能盖住对象头。
             /// </summary>
-            bool LooksLikeTable(int pos)
+            public bool LooksLikeTable(int pos)
             {
                 if (!InRange(pos, 4)) return false;
                 int soff = ReadI32(pos);
                 if (soff == 0) return false;
-                int vt = pos - soff;
-                if (!InRange(vt, 4)) return false;
+                long vtAddress = (long)pos - soff;
+                if (vtAddress < 0 || vtAddress > int.MaxValue || !InRange((int)vtAddress, 4)) return false;
+                int vt = (int)vtAddress;
                 ushort vs = ReadU16(vt);
                 ushort os = ReadU16(vt + 2);
-                if (vs < 4 || vs > 2048) return false;
+                if (vs < 4 || vs > 2048 || !InRange(vt, vs)) return false;
                 if ((vs & 1) != 0) return false; // 通常 2 对齐
                 if (os < 4 || os > 65535) return false;
                 // object 应覆盖到 pos+4
-                if (!InRange(pos, Math.Min((int)os, 64))) return false;
+                if (!InRange(pos, os)) return false;
                 return true;
             }
 
@@ -650,10 +710,10 @@ namespace BtlCore.Fb
                 int len = ReadI32(pos);
                 if (len < 0 || len > 1_000_000) return false;
                 if (!InRange(pos + 4, len + 1)) return false; // +NUL
-                // 允许无严格 NUL
+                if (_d[pos + 4 + len] != 0) return false;
                 try
                 {
-                    s = Encoding.UTF8.GetString(_d, pos + 4, len);
+                    s = new UTF8Encoding(false, true).GetString(_d, pos + 4, len);
                     return true;
                 }
                 catch

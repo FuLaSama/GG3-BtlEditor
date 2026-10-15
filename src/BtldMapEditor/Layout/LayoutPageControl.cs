@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using BtlCore.Front;
 using BtlCore.Scripting;
 
@@ -11,11 +12,15 @@ namespace BtldMapEditor
         readonly ScriptHost _host;
         readonly Action _committed;
         readonly Action<string, ScriptArgs> _nativeCommand;
-        readonly List<FormRow> _forms = new List<FormRow>();
         readonly List<ListSection> _lists = new List<ListSection>();
         readonly List<BoundSection> _bound = new List<BoundSection>();
+        readonly ErrorProvider _inputErrors = new ErrorProvider { BlinkStyle = ErrorBlinkStyle.NeverBlink };
+        readonly ToolTip _fieldTips = new ToolTip();
+        static readonly ConditionalWeakTable<Control, EditorSnapshot> _displayed = new();
         int? _cell;
         bool _loading;
+        readonly Dictionary<string,bool> _folds = new(StringComparer.Ordinal);
+        BtlCore.Fb.SchemaContext _bindingContext;
         public event Action<Exception> ErrorOccurred;
 
         public int? SelectedRow(string bind)
@@ -28,8 +33,11 @@ namespace BtldMapEditor
         {
             _page = page;
             _host = host;
+            BindFields(host.Document?.Context ?? BtlCore.Fb.SoftSchema.DefaultContext);
             _committed = committed;
             _nativeCommand = nativeCommand;
+            _inputErrors.ContainerControl = this;
+            DoubleBuffered = true;
             Dock = DockStyle.Top;
             AutoSize = true;
             AutoSizeMode = AutoSizeMode.GrowAndShrink;
@@ -39,23 +47,18 @@ namespace BtldMapEditor
         public void Reload(BtlFrontDocument doc)
         {
             if (doc == null) return;
+            using var update=BeginUiUpdate();
+            BindFields(doc.Context);
             _host.Load(doc);
             using var read = _host.BeginRead();
             _loading = true;
             try
             {
-                foreach (var form in _forms)
-                {
-                    object value = form.Field.Action != null && _host.CanGet(form.Field.Action)
-                        ? _host.CallGet(form.Field.Action, new ScriptArgs { CellIndex = _cell })
-                        : DefaultValue(form.Field);
-                    form.Shown = value;
-                    WriteEditor(form.Editor, value);
-                }
                 foreach (var list in _lists)
                     FillList(list);
                 RefreshResolved();
                 foreach (var tree in _trees) FillTreeList(tree);
+                RefreshDetails();
             }
             finally
             {
@@ -63,16 +66,31 @@ namespace BtldMapEditor
             }
         }
 
+        void BindFields(BtlCore.Fb.SchemaContext context)
+        {
+            if(ReferenceEquals(_bindingContext,context))return;
+            _host.Fields.Bind(_page,context);_bindingContext=context;
+        }
+
         public void SetCell(int? cell, bool refresh = true)
         {
             int? next = cell >= 0 ? cell : null;
             if (refresh && _cell == next) return;
+            using var update=BeginUiUpdate();
+            if(_cell!=next)
+            {
+                bool loading=_loading; _loading=true;
+                try {
+                    foreach(var detail in _details.Where(d=>!string.IsNullOrEmpty(d.Section.Resolve) && !string.IsNullOrEmpty(d.Section.Selection)))
+                        _lists.FirstOrDefault(l=>l.Section.Bind==detail.Section.Selection)?.View.SelectedIndices.Clear();
+                } finally { _loading=loading; }
+            }
             _cell = next;
             if (refresh && _host.Document != null)
             {
                 using var read = _host.BeginRead();
-                RefreshResolved();
-                RefreshActionFields();
+                RefreshResolved(selectionOnly:true);
+                RefreshDetails(selectionOnly:true);
             }
         }
 
@@ -81,14 +99,36 @@ namespace BtldMapEditor
             var stack = NewStack();
             Controls.Add(stack);
             foreach (var section in _page.Sections)
-                StackAdd(stack, section.Kind switch
+            {
+                var content=section.Kind switch
                 {
                     "list" => BuildList(section),
                     "tree" => BuildTree(section),
                     "palettes" => BuildPalettes(section),
                     "label" => BuildLabel(section),
+                    "details" => BuildDetails(section),
                     _ => BuildForm(section)
-                });
+                };
+                StackAdd(stack,section.Collapsible && section.Kind!="details"
+                    ? Fold(section.Title,SectionKey(section),section.Collapsed,()=>content,true) : content);
+            }
+        }
+        string SectionKey(LayoutSection section) => _page.Id+"/"+(string.IsNullOrEmpty(section.Id) ? section.Bind+"/"+section.Resolve+"/"+section.Title : section.Id);
+        CollapsibleGroup Fold(string title,string key,bool initial,Func<Control> create,bool eager=false)
+        {
+            bool collapsed=_folds.TryGetValue(key,out bool saved) ? saved : initial;
+            var fold=new CollapsibleGroup(title,collapsed,create){Name=key};
+            fold.StateChanged+=value=>_folds[key]=value;
+            if(eager && collapsed) { fold.SetCollapsed(false,false); fold.SetCollapsed(true,false); }
+            return fold;
+        }
+        Control BuildGroup(LayoutGroup group,BoundSection holder,string key)
+        {
+            var stack=NewStack(); var table=NewTriple();
+            foreach(var row in group.Rows) PlaceRow(table,row,holder);
+            StackAdd(stack,table);
+            for(int i=0;i<group.Groups.Count;i++) StackAdd(stack,BuildGroup(group.Groups[i],holder,key+"/"+(group.Groups[i].Id is {Length:>0} id ? id : i.ToString())));
+            return group.Collapsible ? Fold(group.Title,key,group.Collapsed,()=>stack,true) : Group(group.Title,stack);
         }
 
         Control BuildForm(LayoutSection section)
@@ -100,16 +140,11 @@ namespace BtldMapEditor
                 var stack = NewStack();
                 for (int g = 0; g < section.Groups.Count; g++)
                 {
-                    var table = NewTriple();
-                    foreach (var row in section.Groups[g].Rows)
-                        PlaceRow(table, row, holder);
-                    if (g == 0)
-                    {
-                        var bar = CommandBar(holder, () => _host.ResolveIndex(section.Resolve, _cell));
-                        if (bar != null) AddSpan(table, bar);
-                    }
-                    StackAdd(stack, Group(section.Groups[g].Title, table));
+                    var group=section.Groups[g];
+                    StackAdd(stack,BuildGroup(group,holder,SectionKey(section)+"/"+(group.Id is {Length:>0} id ? id : g.ToString())));
                 }
+                var bar=CommandBar(holder,()=>_host.ResolveIndex(section.Resolve,_cell));
+                if(bar!=null) StackAdd(stack,bar);
                 body = stack;
             }
             else
@@ -136,7 +171,7 @@ namespace BtldMapEditor
 
         Control BuildList(LayoutSection section)
         {
-            var list = new ListView
+            var list = new BufferedListView
             {
                 View = View.Details,
                 FullRowSelect = true,
@@ -153,7 +188,11 @@ namespace BtldMapEditor
             var table = NewTriple();
             AddSpan(table, list);
             table.RowStyles[table.RowCount - 1] = new RowStyle(SizeType.Absolute, 168f);
-            if (section.Fields.Count > 0 && section.Fields.Count <= 6)
+            if(section.Groups.Count>0)
+            {
+                for(int i=0;i<section.Groups.Count;i++) AddSpan(table,BuildGroup(section.Groups[i],holder,SectionKey(section)+"/"+i));
+            }
+            else if (section.Fields.Count > 0 && section.Fields.Count <= 6)
                 AddSpan(table, InlineFields(section, holder));
             else
             {
@@ -162,10 +201,17 @@ namespace BtldMapEditor
             }
             var bar = CommandBar(holder, () => SelectedListRow(holder));
             if (bar != null) AddSpan(table, bar);
-            list.SelectedIndexChanged += (s, e) => ShowSelection(holder);
+            list.SelectedIndexChanged += (_,_) =>
+            {
+                if(_loading)return;
+                using var update=BeginUiUpdate();
+                ShowSelection(holder);
+                RefreshDetails(selectionBind:section.Bind);
+            };
             _lists.Add(holder);
             BindGates(holder);
-            return Group(section.Title, table);
+            // 折叠标题已经承担栏目边框和名称，列表不再嵌套另一层自动尺寸 GroupBox。
+            return section.Collapsible ? table : Group(section.Title, table);
         }
 
         Control InlineFields(LayoutSection section, BoundSection holder)
@@ -262,23 +308,46 @@ namespace BtldMapEditor
         {
             editor.Name = field.Id ?? "";
             editor.Enabled = field.Enabled && !field.ReadOnly;
+            if(!string.IsNullOrEmpty(field.Tip)) _fieldTips.SetToolTip(editor,field.Tip);
             Tip(editor, field.DisableReason);
             if (!string.IsNullOrEmpty(field.Id))
                 holder.Editors[field.Id] = editor;
             var form = new FormRow { Field = field, Editor = editor, Holder = holder };
-            _forms.Add(form);
+            holder.EditorRows.Add(form);
+            if (editor is TextBox text)
+                text.TextChanged += (_, _) => UpdateInputError(editor);
+            if (editor is CheckBox check && check.ThreeState)
+            {
+                string label = check.Text;
+                void UpdateState()
+                {
+                    string state = check.CheckState switch
+                    {
+                        CheckState.Indeterminate => "未写",
+                        CheckState.Checked => "是",
+                        _ => "否"
+                    };
+                    check.Text = string.IsNullOrEmpty(label) ? state : label + "（" + state + "）";
+                    _fieldTips.SetToolTip(check, "未写、否、是分别对应缺省、false、true。");
+                }
+                check.CheckStateChanged += (_, _) => UpdateState();
+                UpdateState();
+            }
             if (field.Enabled && !field.ReadOnly && !string.IsNullOrEmpty(field.Action))
                 HookCommit(editor, () => CommitForm(form));
         }
 
         void CommitForm(FormRow form)
         {
-            if (_loading || _host.Document == null) return;
-            object value = ReadEditor(form.Editor);
+            if (_loading || _host.Document == null || !EditorChanged(form.Editor)) return;
+            object value;
+            try { value = ReadInput(form.Editor); }
+            catch (Exception ex) { ShowError(ex); return; }
             if (Same(value, form.Shown)) return;
             try
             {
-                if (!string.IsNullOrEmpty(form.Holder.Section.Resolve) && _cell == null) return;
+                if (!string.IsNullOrEmpty(form.Holder.Section.Resolve)
+                    && _host.ResolveIndex(form.Holder.Section.Resolve, _cell) == null) return;
                 _host.Run(form.Field.Action, new ScriptArgs { Value = value, CellIndex = _cell });
                 form.Shown = value;
                 _committed?.Invoke();
@@ -303,9 +372,14 @@ namespace BtldMapEditor
             if (!string.IsNullOrEmpty(cmd.Confirm)
                 && MessageBox.Show(cmd.Confirm, cmd.Label, MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
+            Dictionary<string, object> input;
+            try { input = ReadInputs(editors); }
+            catch (Exception ex) { ShowError(ex); return; }
+            // 保存未改过的界面，不运行会补缺省值的整对象写入脚本。
+            if (cmd.Id == "update" && !editors.Values.Any(EditorChanged)) return;
             try
             {
-                var args = new ScriptArgs { Index = index, CellIndex = _cell, Input = ReadInputs(editors) };
+                var args = new ScriptArgs { Index = index, CellIndex = _cell, Input = input };
                 if (cmd.Id == "update" && index != null && !string.IsNullOrEmpty(section.Bind) && section.Bind[0] != '/')
                 {
                     args.ObjectPath = section.Bind;
@@ -345,35 +419,52 @@ namespace BtldMapEditor
 
         void FillListRows(ListSection list)
         {
-            int keep = list.PendingIndex ?? SelectedListRow(list) ?? -1;
-            list.PendingIndex = null;
-            if (list.View.VirtualMode) list.View.VirtualListSize = 0;
-            else list.View.Items.Clear();
-            list.Rows.Clear();
-            list.CachedItems.Clear();
-            int n = string.IsNullOrEmpty(list.Section.Bind) ? 0 : _host.Count(list.Section.Bind);
-            int total = list.Section.Filter == "offmap"
-                ? Convert.ToInt32(_host.ReadBind(null, "/1/0.0", null, null, "number", null, null))
-                * Convert.ToInt32(_host.ReadBind(null, "/1/0.1", null, null, "number", null, null)) : 0;
-            for (int i = 0; i < n; i++)
+            int keep=list.PendingIndex??SelectedListRow(list)??-1;list.PendingIndex=null;
+            var rows=new List<int>();
+            int count=string.IsNullOrEmpty(list.Section.Bind) ? 0 : _host.Count(list.Section.Bind);
+            int total=list.Section.Filter=="offmap"
+                ? Convert.ToInt32(_host.ReadBind(null,"/1/0.0",null,null,"number",null,null))
+                * Convert.ToInt32(_host.ReadBind(null,"/1/0.1",null,null,"number",null,null)) : 0;
+            for(int i=0;i<count;i++)
             {
-                if (list.Section.Filter == "offmap")
+                if(list.Section.Filter=="offmap")
                 {
-                    int cell = Convert.ToInt32(_host.ReadBind(list.Section.Bind, "/0.0", i, null, "number", null, null));
-                    if (cell >= 0 && cell < total) continue;
+                    int cell=Convert.ToInt32(_host.ReadBind(list.Section.Bind,"/0.0",i,null,"number",null,null));
+                    if(cell>=0 && cell<total)continue;
                 }
-                list.Rows.Add(i);
+                rows.Add(i);
             }
-            list.View.VirtualMode = list.Rows.Count > 256;
-            if (list.View.VirtualMode) list.View.VirtualListSize = list.Rows.Count;
-            else for (int row = 0; row < list.Rows.Count; row++) list.View.Items.Add(ListItem(list, row));
-            int selected = list.Rows.IndexOf(keep);
-            if (selected >= 0)
-                list.View.Items[selected].Selected = true;
+            bool virtualMode=rows.Count>256;
+            bool sameRows=list.View.VirtualMode==virtualMode && list.Rows.SequenceEqual(rows);
+            list.CachedItems.Clear();
+            if(!sameRows)
+            {
+                if(list.View.VirtualMode)list.View.VirtualListSize=0;else list.View.Items.Clear();
+                list.Rows.Clear();list.Rows.AddRange(rows);list.View.VirtualMode=virtualMode;
+                if(virtualMode)list.View.VirtualListSize=rows.Count;
+                else for(int row=0;row<rows.Count;row++)list.View.Items.Add(ListItem(list,row));
+            }
+            else if(virtualMode)list.View.Invalidate();
             else
-                ShowSelection(list);
-            foreach (var button in list.NeedSelection)
-                button.Enabled = list.View.SelectedIndices.Count > 0;
+            {
+                for(int row=0;row<rows.Count;row++)
+                {
+                    var item=list.View.Items[row];
+                    for(int col=0;col<list.Section.Columns.Count;col++)
+                    {
+                        string text=CellText(list,rows[row],col);
+                        if(item.SubItems[col].Text!=text)item.SubItems[col].Text=text;
+                    }
+                    list.CachedItems[row]=item;
+                }
+            }
+            int selected=list.Rows.IndexOf(keep);
+            int shown=list.View.SelectedIndices.Count==0 ? -1 : list.View.SelectedIndices[0];
+            if(shown!=selected)
+            {
+                list.View.SelectedIndices.Clear();if(selected>=0)list.View.Items[selected].Selected=true;
+            }
+            ShowSelection(list);
         }
 
         static int? SelectedListRow(ListSection list)
@@ -399,24 +490,31 @@ namespace BtldMapEditor
         void ShowSelection(ListSection list)
         {
             using var read = _host.BeginRead();
-            bool selected = list.View.SelectedIndices.Count > 0;
-            foreach (var button in list.NeedSelection)
-                button.Enabled = selected;
-            if (!selected)
+            bool previous = _loading;
+            _loading = true;
+            try
             {
-                foreach (var editor in list.Editors.Values)
-                    WriteEditor(editor, null);
+                bool selected = list.View.SelectedIndices.Count > 0;
+                foreach (var button in list.NeedSelection)
+                    button.Enabled = selected;
+                if (!selected)
+                {
+                    foreach (var field in list.Section.Fields)
+                        if (!string.IsNullOrEmpty(field.Id) && list.Editors.TryGetValue(field.Id, out var editor))
+                            WriteField(list, field, editor, null);
+                    ApplyGates(list);
+                    return;
+                }
+                int index = SelectedListRow(list) ?? -1;
+                foreach (var field in list.Section.Fields)
+                {
+                    if (string.IsNullOrEmpty(field.Id) || !list.Editors.TryGetValue(field.Id, out var editor)) continue;
+                    WriteField(list, field, editor, ReadField(list.Section, field, index), index);
+                    RefreshName(list, field);
+                }
                 ApplyGates(list);
-                return;
             }
-            int index = SelectedListRow(list) ?? -1;
-            foreach (var field in list.Section.Fields)
-            {
-                if (string.IsNullOrEmpty(field.Id) || !list.Editors.TryGetValue(field.Id, out var editor)) continue;
-                WriteEditor(editor, ReadField(list.Section, field, index));
-                RefreshName(list, field);
-            }
-            ApplyGates(list);
+            finally { _loading = previous; }
         }
 
         object ReadField(LayoutSection section, LayoutField field, int? index)
@@ -428,37 +526,37 @@ namespace BtldMapEditor
             {
                 string path = LayoutRead.Compose(section.Bind, field.Bind, index, _cell);
                 if (path == null) return null;
+                var node = _host.ReadNode(path);
+                if (node == null) return null;
+                if (node is not BtlVector) throw new InvalidDataException("格子列表的字段类型不正确。");
                 return Enumerable.Range(0, _host.Count(path))
                     .Select(i => _host.ReadBind(null, path + "[" + i + "]", null, _cell, "number", null, null)).ToArray();
             }
             return _host.ReadBind(section.Bind, field.Bind, index, _cell, field.Widget, field.Shift, field.Width);
         }
 
-        void RefreshResolved()
+        void RefreshResolved(bool selectionOnly=false)
         {
-            using var read = _host.BeginRead();
-            bool previous = _loading;
-            _loading = true;
+            using var read=_host.BeginRead();bool previous=_loading;_loading=true;
             try
             {
-                foreach (var holder in _bound)
+                foreach(var holder in _bound)
                 {
-                    int? index = _host.ResolveIndex(holder.Section.Resolve, _cell);
-                    foreach (var field in holder.Section.Fields)
+                    int? index=_host.ResolveIndex(holder.Section.Resolve,_cell);
+                    bool cellBound=!string.IsNullOrEmpty(holder.Section.Resolve) || (holder.Section.Bind?.Contains("{cell}")??false);
+                    foreach(var form in holder.EditorRows)
                     {
-                        if (string.IsNullOrEmpty(field.Id) || !holder.Editors.TryGetValue(field.Id, out var editor)) continue;
-                        object value = ReadField(holder.Section, field, index);
-                        WriteEditor(editor, value);
-                        var form = _forms.Find(f => f.Editor == editor);
-                        if (form != null) form.Shown = ReadEditor(editor);
-                        RefreshName(holder, field);
+                        var field=form.Field;
+                        if(selectionOnly && !cellBound && string.IsNullOrEmpty(field.Action) && !(field.Bind?.Contains("{cell}")??false))continue;
+                        object value=ReadField(holder.Section,field,index);
+                        WriteField(holder,field,form.Editor,value,index);form.Shown=ReadEditor(form.Editor);
+                        RefreshName(holder,field);
                     }
-                    foreach (var button in holder.NeedSelection)
-                        button.Enabled = index != null;
+                    foreach(var button in holder.NeedSelection)button.Enabled=index!=null;
                     ApplyGates(holder);
                 }
             }
-            finally { _loading = previous; }
+            finally {_loading=previous;}
         }
 
         Control CommandBar(BoundSection holder, Func<int?> indexOf)
@@ -505,7 +603,7 @@ namespace BtldMapEditor
                 if (field.Widget != "check") continue;
                 if (string.IsNullOrEmpty(field.Id) || !holder.Editors.TryGetValue(field.Id, out var editor)) continue;
                 if (editor is CheckBox check)
-                    check.CheckedChanged += (s, e) => ApplyGates(holder);
+                    check.CheckStateChanged += (s, e) => ApplyGates(holder);
             }
             ApplyGates(holder);
         }
@@ -519,14 +617,14 @@ namespace BtldMapEditor
             {
                 if (string.IsNullOrEmpty(field.When)) continue;
                 if (string.IsNullOrEmpty(field.Id) || !holder.Editors.TryGetValue(field.Id, out var editor)) continue;
-                bool on = field.Enabled;
+                bool on = field.Enabled && !field.ReadOnly;
                 if (on)
                 {
                     foreach (var id in field.When.Split(','))
                     {
                         string key = id.Trim();
                         if (key.Length == 0) continue;
-                        if (!holder.Editors.TryGetValue(key, out var gate) || gate is not CheckBox check || !check.Checked)
+                        if (!holder.Editors.TryGetValue(key, out var gate) || gate is not CheckBox check || check.CheckState != CheckState.Checked)
                         {
                             on = false;
                             break;
@@ -593,14 +691,16 @@ namespace BtldMapEditor
         {
             var input = new Dictionary<string, object>();
             foreach (var pair in editors)
-                input[pair.Key] = ReadEditor(pair.Value);
+                input[pair.Key] = ReadInput(pair.Value);
+            // Lua 表中的 nil 无法区分“控件不存在”和“用户清空”；供增量扩充的表单保留此区别。
+            input["__fields"] = editors.Keys.ToDictionary(key=>key,key=>(object)true);
             return input;
         }
 
         static Control CreateEditor(LayoutField field)
         {
             if (field.Widget == "check")
-                return new CheckBox { Text = "", AutoSize = true, Anchor = AnchorStyles.Left };
+                return new CheckBox { Text = "", AutoSize = true, Anchor = AnchorStyles.Left, ThreeState = field.Nullable };
             if (field.Widget == "text" || field.Widget == "integers")
                 return new TextBox { Anchor = AnchorStyles.Left | AnchorStyles.Right, Width = 160, Tag = field.Widget };
             var box = new NullableNumericUpDown { Anchor = AnchorStyles.Left | AnchorStyles.Right, Width = 120 };
@@ -623,7 +723,7 @@ namespace BtldMapEditor
         static void HookCommit(Control editor, Action commit)
         {
             if (editor is CheckBox check)
-                check.CheckedChanged += (s, e) => commit();
+                check.CheckStateChanged += (s, e) => commit();
             if (editor is TextBox text && editor is not NullableNumericUpDown)
                 text.Leave += (s, e) => commit();
             if (editor is NullableNumericUpDown box)
@@ -642,19 +742,21 @@ namespace BtldMapEditor
 
         static object ReadEditor(Control editor)
         {
-            if (editor is CheckBox check) return check.Checked;
+            if (editor is CheckBox check)
+                return check.ThreeState && check.CheckState == CheckState.Indeterminate ? null : check.CheckState == CheckState.Checked;
             if (editor is TextBox text && editor is not NullableNumericUpDown)
-                return Equals(text.Tag, "integers")
-                    ? text.Text.Split(new[] { ',', '，', ';', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries)
-                        .Select(s => (object)int.Parse(s, CultureInfo.InvariantCulture)).ToArray()
-                    : text.Text;
-            if (editor is NullableNumericUpDown box)
             {
-                if (box.NullableValue == null) return null;
-                decimal n = box.NullableValue.Value;
-                if (n < box.Minimum || n > box.Maximum) return null;
-                return (double)n;
+                if (!Equals(text.Tag, "integers")) return text.Text;
+                string input = text.Text.Trim();
+                if (input.Length == 0) return null;
+                if (input == "[]") return Array.Empty<object>();
+                var parts = input.Split(new[] { ',', '，', ';', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length == 0 || parts.Any(s => !int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)))
+                    throw new FormatException("请填写逗号分隔的整数；留空表示未写，[] 表示空列表。");
+                return parts.Select(s => (object)int.Parse(s, CultureInfo.InvariantCulture)).ToArray();
             }
+            if (editor is NullableNumericUpDown box)
+                return box.ReadValue();
             return null;
         }
 
@@ -662,20 +764,74 @@ namespace BtldMapEditor
         {
             if (editor is TextBox text && editor is not NullableNumericUpDown)
             {
-                text.Text = value is System.Collections.IEnumerable values && value is not string
-                    ? string.Join(", ", values.Cast<object>()) : value?.ToString() ?? "";
-                return;
+                if (value is System.Collections.IEnumerable values && value is not string)
+                {
+                    var array = values.Cast<object>().ToArray();
+                    text.Text = array.Length == 0 && Equals(text.Tag, "integers") ? "[]" : string.Join(", ", array);
+                }
+                else text.Text = value?.ToString() ?? "";
             }
-            if (editor is CheckBox check)
+            else if (editor is CheckBox check)
             {
-                check.Checked = value is bool b && b;
-                return;
+                check.CheckState = value == null && check.ThreeState ? CheckState.Indeterminate
+                    : value is bool b && b ? CheckState.Checked : CheckState.Unchecked;
             }
-            if (editor is NullableNumericUpDown box)
+            else if (editor is NullableNumericUpDown box)
             {
-                if (value == null) box.NullableValue = null;
-                else box.NullableValue = Convert.ToDecimal(value, CultureInfo.InvariantCulture);
+                box.SetDisplayValue(value);
             }
+            var snapshot = _displayed.GetValue(editor, _ => new EditorSnapshot());
+            snapshot.Text = editor.Text;
+            snapshot.CheckState = editor is CheckBox checkbox ? checkbox.CheckState : null;
+        }
+
+        void WriteField(BoundSection holder, LayoutField field, Control editor, object value, int? index = null)
+        {
+            WriteEditor(editor, value);
+            if (editor is TextBox text)
+            {
+                bool noSelection = (!string.IsNullOrEmpty(holder.Section.Bind) || !string.IsNullOrEmpty(holder.Section.Resolve)) && index == null;
+                text.PlaceholderText = noSelection ? "未选中对象" : value == null ? "未写" : "";
+                if (field.Widget == "integers")
+                    FieldTip(text, "留空表示未写；[] 表示已写入的空列表；有格子时用逗号分隔。");
+                else if (!string.IsNullOrEmpty(field.Bind) || !string.IsNullOrEmpty(field.Action))
+                    FieldTip(text, noSelection ? "先选中对象，再查看或修改字段。" : "空白表示当前文档未写此字段或其父对象；0 表示已写入的零。");
+            }
+            _inputErrors.SetError(editor, "");
+        }
+
+        void FieldTip(Control control,string text)
+        {
+            if(_fieldTips.GetToolTip(control)!=text)_fieldTips.SetToolTip(control,text);
+        }
+
+        static bool EditorChanged(Control editor) => !_displayed.TryGetValue(editor, out var shown)
+            || (editor is CheckBox check ? check.CheckState != shown.CheckState : editor.Text != shown.Text);
+
+        object ReadInput(Control editor)
+        {
+            try { var value = ReadEditor(editor); _inputErrors.SetError(editor, ""); return value; }
+            catch (Exception ex) when (ex is FormatException || ex is OverflowException)
+            { _inputErrors.SetError(editor, ex.Message); throw; }
+        }
+
+        void UpdateInputError(Control editor)
+        {
+            if (_loading) return;
+            try { _ = ReadInput(editor); }
+            catch (Exception ex) when (ex is FormatException || ex is OverflowException) { }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) { _inputErrors.Dispose(); _fieldTips.Dispose(); }
+            base.Dispose(disposing);
+        }
+
+        sealed class EditorSnapshot
+        {
+            public string Text;
+            public CheckState? CheckState;
         }
 
         static bool Same(object a, object b)
@@ -688,7 +844,7 @@ namespace BtldMapEditor
 
         static TableLayoutPanel NewStack()
         {
-            var stack = new TableLayoutPanel
+            var stack = new BufferedTable
             {
                 Dock = DockStyle.Top,
                 AutoSize = true,
@@ -710,7 +866,7 @@ namespace BtldMapEditor
 
         static TableLayoutPanel NewTriple()
         {
-            var grid = new TableLayoutPanel
+            var grid = new BufferedTable
             {
                 Dock = DockStyle.Top,
                 AutoSize = true,
@@ -774,6 +930,7 @@ namespace BtldMapEditor
         class BoundSection
         {
             public LayoutSection Section;
+            public readonly List<FormRow> EditorRows=new();
             public Dictionary<string, Control> Editors;
             public Dictionary<string, Label> Names { get; } = new Dictionary<string, Label>();
             public List<Button> NeedSelection { get; } = new List<Button>();

@@ -1,0 +1,306 @@
+---@meta
+-- 仅供 Lua 编辑器读取的类型说明，不要加入 layout.xml 或用户 tools 目录。
+
+---@class GameObject
+local object = {}
+---@param values table 仅修改提供的属性；删除可选配置请用 clear。
+function object:update(values) end
+---@param name string 可选配置名。
+---@param values? table 局部更新；省略时只保证配置存在。
+---@return GameObject
+function object:ensure(name, values) end
+---@param name string 可选配置名，清除整组内容。
+function object:clear(name) end
+
+---@class GameRow: GameObject
+---@field index integer 当前文档中的 0 起行号；随本对象移动而变化。
+
+---@class GameCollection<T>
+---@field count fun(): integer
+---@field get fun(index: integer): T?
+---@field create fun(values?: table): T
+---@field ensure fun() 保证向量存在，不创建任何行。
+---@field each fun(filter?: fun(object:T):boolean): fun(): T?
+---@field all fun(filter?: fun(object:T):boolean): T[] 当前调用内的对象快照。
+---@field remove fun(index: integer|T)
+---@field remove_where fun(predicate:fun(object:T):boolean): integer 先筛选再删除，返回删除行数。
+---@field move fun(from:integer,to:integer)
+---@field copy fun(index:integer|T|nil,key:string)
+---@field paste fun(key:string):T?
+---@field define_field fun(name:string,descriptor:GameField) 只在加载阶段使用。
+---@field define_method fun(name:string,method:function) 只在加载阶段使用，方法第一个参数是 self。
+
+---@class GameGeneral: GameObject
+---@field id integer?
+---@field active boolean?
+---@field parameter_2 integer?
+---@field medal integer? 勋章 ID。
+---@class GameUnitBehavior: GameObject
+---@field id integer?
+---@field parameter_0 integer?
+---@field parameter_2 integer?
+---@field radius integer?
+---@field parameter_4 integer?
+---@field center_cell integer?
+---@field parameter_6 integer?
+---@class GameSpecial: GameObject
+---@field id integer?
+---@field parameter_1 integer?
+---@field hp integer?
+---@field max_hp integer?
+---@field parameter_4 integer?
+---@field parameter_5 integer?
+---@class GameUnit: GameRow
+---@field cell_index integer?
+---@field faction integer?
+---@field agent_id integer? 身份只读，修改使用 set_id。
+---@field type_id integer?
+---@field hp integer?
+---@field max_hp integer?
+---@field level integer?
+---@field stack integer?
+---@field direction integer?
+---@field mobility integer?
+---@field parameter_8 integer?
+---@field parameter_9 integer?
+---@field play_mode integer?
+---@field ai_target integer?
+---@field faction_extra integer?
+---@field general_id integer?
+---@field general GameGeneral?
+---@field special GameSpecial?
+---@field behavior GameUnitBehavior?
+---@field heal fun(self:GameUnit)
+---@field move fun(self:GameUnit,x:integer,y:integer)
+---@field set_id fun(self:GameUnit,id:integer)
+local unit = {}
+---@overload fun(self:GameUnit,name:'general',values?:table):GameGeneral
+---@overload fun(self:GameUnit,name:'behavior',values?:table):GameUnitBehavior
+---@overload fun(self:GameUnit,name:'special',values?:table):GameSpecial
+---@param name string
+---@param values? table
+---@return GameObject
+function unit:ensure(name,values) end
+---@class GameUnits: GameCollection<GameUnit>
+---@field each fun(filter?:integer|fun(unit:GameUnit):boolean):fun():GameUnit?
+---@field all fun(filter?:integer|fun(unit:GameUnit):boolean):GameUnit[]
+---@field at_cell fun(index:integer):GameUnit?
+---@field index_at_cell fun(index:integer,last?:boolean):integer?
+---@field selected fun(ctx:ScriptContext):GameUnit?
+---@field next_id fun():integer
+---@field assign_uids_by_cell fun():integer 按地块重排地图内 UID，处理地图外冲突并同步已知引用；返回地图内单位数。
+---@field remove_at_cell fun(index:integer):integer
+
+---@class GameColor: GameObject
+---@field r integer?
+---@field g integer?
+---@field b integer?
+---@field a integer?
+---@class GameFaction: GameRow
+---@field id integer?
+---@field country integer?
+---@field camp integer?
+---@field gold integer?
+---@field tech integer?
+---@field income_multiplier number?
+---@field damage_multiplier number?
+---@field hp_multiplier number?
+---@field is_ai boolean
+---@field color GameColor
+---@field parameter_5 integer?
+---@field alignment_1 integer?
+---@field alignment_2 integer?
+---@field config_id integer?
+---@field general_flag integer?
+---@field config_ref integer?
+---@field set_id fun(self:GameFaction,id:integer)
+---@class GameFactions: GameCollection<GameFaction>
+---@field by_id fun(id:integer):GameFaction?
+---@field selected fun(ctx:ScriptContext):GameFaction?
+
+---@class GameBuilding: GameObject
+---@field flag integer?
+---@field type_id integer?
+---@field extra integer?
+---@field owner integer?
+---@field dx integer?
+---@field dy integer?
+---@field parameter_6 integer?
+---@class GameFort: GameObject
+---@field id integer?
+---@field parameter_3 integer?
+---@class GameEvent: GameRow
+---@field cell_index integer?
+---@field parameter_1 integer?
+---@field building GameBuilding?
+---@field fort GameFort?
+---@field prepare_building fun(self:GameEvent)
+---@field is_building fun(self:GameEvent):boolean
+---@field is_fort fun(self:GameEvent):boolean
+local event = {}
+---@overload fun(self:GameEvent,name:'building',values?:table):GameBuilding
+---@overload fun(self:GameEvent,name:'fort',values?:table):GameFort
+---@param name string
+---@param values? table
+---@return GameObject
+function event:ensure(name,values) end
+---@class GameEvents: GameCollection<GameEvent>
+---@field index_at_cell fun(cell:integer,kind?:'building'|'fort',last?:boolean):integer?
+---@field remove_landmarks fun(cell:integer):integer
+
+---@class GameLayer: GameObject
+---@field present boolean
+---@field id integer?
+---@field variant integer?
+---@field dx integer?
+---@field dy integer?
+---@class GameCell: GameObject
+---@field index integer 0 起格子下标。
+---@field x integer
+---@field y integer
+---@field climate integer
+---@field variant integer
+---@field sea boolean
+---@field playable boolean
+---@field main GameLayer
+---@field secondary GameLayer
+---@field decor GameLayer
+---@class GameMap
+---@field width integer? 只读，改变尺寸使用 resize。
+---@field height integer?
+---@field left_margin integer?
+---@field top_margin integer?
+---@field play_width integer?
+---@field play_height integer?
+---@field cell fun(x:integer,y:integer):GameCell
+---@field cell_at_index fun(index:integer):GameCell
+---@field try_cell_at_index fun(index:integer?):GameCell?
+---@field cells fun():fun():GameCell?
+---@field is_layer fun(name:string):boolean
+---@field paste_terrain fun(index:integer,source:table)
+---@field resize fun(options: {left?:integer,right?:integer,up?:integer,down?:integer})
+---@class GameStage
+---@field round_limit integer?
+---@field fog boolean
+---@class GameTarget: GameRow
+---@field type integer?
+---@field value integer?
+---@field param1 integer?
+---@field param2 integer?
+---@field flag integer?
+---@class GameReinforcement: GameRow
+---@field cell integer?
+---@field faction integer?
+---@field is_key boolean?
+---@field flag integer?
+---@class GameWeather: GameRow
+---@field type integer?
+---@field start integer?
+---@field duration integer?
+---@class GameRoute: GameRow
+---@field flag integer?
+---@field cells integer[]? 数组为副本，修改后整体赋回。
+---@class GameBehaviorTree
+---@field btid integer?
+---@field id integer?
+---@field name string?
+---@field agent string?
+---@field class string?
+---@field method string?
+---@field result integer?
+---@field count integer?
+---@field params any[]?
+---@field rounds integer? wait 的相对等待回合数。
+---@field child_count integer
+---@field update fun(self:GameBehaviorTree,values:table)
+---@field node fun(self:GameBehaviorTree,path:integer[]):GameBehaviorTree
+---@field add_child fun(self:GameBehaviorTree,values?:table,with_children?:boolean):GameBehaviorTree
+---@field remove_child fun(self:GameBehaviorTree,index:integer)
+---@class Game
+---@field units GameUnits
+---@field factions GameFactions
+---@field events GameEvents
+---@field map GameMap
+---@field stage GameStage
+---@field targets GameCollection<GameTarget>
+---@field reinforcements GameCollection<GameReinforcement>
+---@field weather GameCollection<GameWeather>
+---@field routes GameCollection<GameRoute>
+---@field behavior_trees {count:fun():integer,get:fun(index:integer):GameBehaviorTree,create:fun():GameBehaviorTree,remove:fun(index:integer)}
+---@type Game
+game = {}
+
+---@class GameField
+---@field get fun(anchor:any):any
+---@field set fun(anchor:any,value:any)
+---@field optional? boolean
+---@class GameCollectionOptions<T>
+---@field path string 表向量的完整数字路径。
+---@field label string
+---@field fields table<string,GameField>
+---@field methods? table<string,function> 对象方法，采用 self 作为第一个参数。
+---@field api? table<string,function> 集合函数，采用点调用，不覆盖标准集合方法。
+---@field prepare? fun(anchor:any) 写入新行的物理结构。
+---@field initialize? fun(object:T) 设置默认属性；在调用方 values 之前执行。
+---@field after_create? fun(object:T) 在调用方 values 之后建立关联数据。
+---@field before_remove? fun(object:T) 删除之前清理关联数据。
+---@field after_move? fun(object:T,from:integer,to:integer)
+---@field matches? fun(object:T,filter:any):boolean
+---@class GameObjectFactory
+local factory = {}
+---@param path string 相对于对象的数字路径。
+---@param kind string Front 标量类型，如 u16。
+---@param readonly? boolean
+---@param layout? string[]
+---@return GameField
+function factory.scalar(path,kind,readonly,layout) end
+---@param id string 公共字段目录 ID。
+---@param readonly? boolean
+---@return GameField
+function factory.named(id,readonly) end
+---@return GameField
+function factory.packed(path,shift,default,label,layout) end
+---@param path string
+---@param kind string
+---@return GameField
+function factory.array(path,kind) end
+---@param id string 公共目录中的配置组 ID。
+---@param label string
+---@param fields table<string,GameField>
+---@param prepare? fun(anchor:any)
+---@return GameField
+function factory.optional(id,label,fields,prepare) end
+---@generic T
+---@param options GameCollectionOptions<T>
+---@return GameCollection<T>
+function factory.collection(options) end
+---@class ScriptContext
+---@field index integer?
+---@field cell_index integer?
+---@field unit_index integer?
+---@field faction_index integer?
+---@field input table
+---@field value any
+---@class EditorModules
+---@field objects GameObjectFactory
+---@class EditorApi
+---@field modules EditorModules
+---@field data table<string,function>
+---@field internal table<string,function> 内置模块桥接；普通工具优先使用 game。
+---@field state {get:fun(key:string):any,set:fun(key:string,value:any)}
+---@field clipboard {copy:fun(key:string,path:string),has:fun(key:string):boolean,clear:fun(key:string),paste:fun(path:string,key:string):integer}
+---@field band fun(a:integer,b:integer):integer
+---@field bor fun(a:integer,b:integer):integer
+---@field bxor fun(a:integer,b:integer):integer
+---@field lshift fun(a:integer,n:integer):integer
+---@field rshift fun(a:integer,n:integer):integer
+---@field root fun():any
+---@field remap_cell fun(index:integer,old_width:integer,left:integer,up:integer,width:integer,height:integer):integer?
+---@field api_version integer
+---@field tool fun(definition:table)
+---@field action fun(name:string,definition:function|table)
+---@field resolve fun(name:string,definition:function)
+---@field format {schema:fun(definition:table),codec:fun(definition:table),read:fun(id:string,path:string):any,write:fun(id:string,path:string,value:any)}
+---@field binary {create:fun(size:integer):integer[],read:fun(bytes:integer[],offset:integer,kind:string,order?:'le'|'be'):number|string,write:fun(bytes:integer[],offset:integer,kind:string,value:number|string,order?:'le'|'be')}
+---@type EditorApi
+editor = {}

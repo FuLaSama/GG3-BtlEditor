@@ -1,0 +1,1707 @@
+{
+  "version": 1,
+  "revision": "research.2026-10-15",
+  "source_sha256": "11e9cc530836b7c4ebdddaf69a3acb727742e4321ba5f068696dc78dde476ef1",
+  "types": {
+    "Size": {
+      "label": "地图尺寸",
+      "fields": {
+        "width": {
+          "label": "总宽",
+          "tip": "地图总宽度",
+          "uncertain": false
+        },
+        "height": {
+          "label": "总高",
+          "tip": "地图总高度",
+          "uncertain": false
+        },
+        "left_margin": {
+          "label": "左侧留白",
+          "tip": "不可玩区域左侧起点",
+          "uncertain": false
+        },
+        "top_margin": {
+          "label": "顶部留白",
+          "tip": "不可玩区域顶部起点",
+          "uncertain": false
+        },
+        "playable_width": {
+          "label": "可玩宽度",
+          "tip": "可玩区域宽度",
+          "uncertain": false
+        },
+        "playable_height": {
+          "label": "可玩高度",
+          "tip": "可玩区域高度",
+          "uncertain": false
+        }
+      }
+    },
+    "TileAttr": {
+      "label": "地形贴图",
+      "fields": {
+        "byte0": {
+          "label": "地形",
+          "tip": "地形ID",
+          "uncertain": false
+        },
+        "byte1": {
+          "label": "变种",
+          "tip": "变种ID",
+          "uncertain": false
+        },
+        "byte2": {
+          "label": "横向偏移",
+          "tip": "贴图偏移dx",
+          "uncertain": false
+        },
+        "byte3": {
+          "label": "纵向偏移",
+          "tip": "贴图偏移dy",
+          "uncertain": false
+        }
+      }
+    },
+    "Inline3": {
+      "label": "三字节状态",
+      "fields": {
+        "b0": {
+          "label": "着火标记",
+          "tip": "*着火标记",
+          "uncertain": true
+        },
+        "b1": {
+          "label": "轮转槽",
+          "tip": "*火焰持续计数的递减轮转槽",
+          "uncertain": true
+        },
+        "b2": {
+          "label": "剩余计数",
+          "tip": "*剩余火焰持续计数",
+          "uncertain": true
+        }
+      }
+    },
+    "TriggerAction": {
+      "label": "开放矩形",
+      "fields": {
+        "action_type": {
+          "label": "最小横坐标",
+          "tip": "x_min：最小横坐标",
+          "uncertain": false
+        },
+        "param1": {
+          "label": "最小纵坐标",
+          "tip": "y_min：最小纵坐标",
+          "uncertain": false
+        },
+        "x": {
+          "label": "最大横坐标",
+          "tip": "x_max：最大横坐标，包含边界",
+          "uncertain": false
+        },
+        "y": {
+          "label": "最大纵坐标",
+          "tip": "y_max：最大纵坐标，包含边界",
+          "uncertain": false
+        }
+      }
+    },
+    "AgentInfo": {
+      "label": "部队信息",
+      "fields": {
+        "cell_idx": {
+          "label": "地图格",
+          "tip": "地块ID",
+          "uncertain": false
+        },
+        "faction_id": {
+          "label": "势力",
+          "tip": "归属阵营ID",
+          "uncertain": false
+        },
+        "agent_id": {
+          "label": "单位UID",
+          "tip": "单位UID",
+          "uncertain": false
+        },
+        "unit_id": {
+          "label": "兵种",
+          "tip": "兵种ID",
+          "uncertain": false
+        },
+        "stack_count": {
+          "label": "经验与编数",
+          "tip": "16 位合并值：低 8 位为经验，高 8 位为编数。日常编辑可用基础栏的分项输入。",
+          "uncertain": false
+        },
+        "unit_level": {
+          "label": "编数",
+          "tip": "编数",
+          "uncertain": false
+        },
+        "val5": {
+          "label": "朝向与移动力",
+          "tip": "16 位合并值：低 8 位为朝向，高 8 位为移动力。日常编辑可用基础栏的分项输入。",
+          "uncertain": false
+        },
+        "move_points": {
+          "label": "移动力",
+          "tip": "当前移动力",
+          "uncertain": false
+        },
+        "hp": {
+          "label": "当前生命",
+          "tip": "当前生命值",
+          "uncertain": false
+        },
+        "max_hp": {
+          "label": "最大生命",
+          "tip": "最大生命值",
+          "uncertain": false
+        },
+        "val8": {
+          "label": "血率",
+          "tip": "血率",
+          "uncertain": false
+        },
+        "val9": {
+          "label": "升级进度",
+          "tip": "升级进度",
+          "uncertain": false
+        }
+      }
+    },
+    "FactionMetadata": {
+      "label": "势力信息",
+      "fields": {
+        "faction_id": {
+          "label": "战役ID",
+          "tip": "战役ID",
+          "uncertain": false
+        },
+        "country_id": {
+          "label": "国家",
+          "tip": "国家ID",
+          "uncertain": false
+        },
+        "camp": {
+          "label": "阵营",
+          "tip": "阵营",
+          "uncertain": false
+        },
+        "is_ai": {
+          "label": "玩家控制",
+          "tip": "是否玩家",
+          "uncertain": false
+        },
+        "general_limit": {
+          "label": "战败条件",
+          "tip": "战败条件",
+          "uncertain": false
+        },
+        "align_1": {
+          "label": "占位1",
+          "tip": "*对齐占位符",
+          "uncertain": true
+        },
+        "initial_gold": {
+          "label": "金币",
+          "tip": "初始金币",
+          "uncertain": false
+        },
+        "initial_tech": {
+          "label": "科技",
+          "tip": "初始科技",
+          "uncertain": false
+        },
+        "income_modifier": {
+          "label": "金钱收入",
+          "tip": "金钱收入倍率",
+          "uncertain": false
+        },
+        "damage_modifier": {
+          "label": "科技收入",
+          "tip": "科技收入倍率",
+          "uncertain": false
+        },
+        "hp_modifier": {
+          "label": "部队血率",
+          "tip": "部队血率",
+          "uncertain": false
+        },
+        "color": {
+          "label": "势力颜色",
+          "tip": "势力颜色",
+          "uncertain": false
+        },
+        "align_2": {
+          "label": "占位2",
+          "tip": "*对齐占位符",
+          "uncertain": true
+        },
+        "config_id": {
+          "label": "关联地图格",
+          "tip": "关联地图格号",
+          "uncertain": false
+        }
+      }
+    },
+    "MapTerrain": {
+      "label": "地形",
+      "fields": {
+        "size": {
+          "label": "地图尺寸",
+          "tip": "地图尺寸",
+          "uncertain": false
+        },
+        "val1": {
+          "label": "默认地质",
+          "tip": "*默认地质类型",
+          "uncertain": true
+        },
+        "tiles": {
+          "label": "地块属性",
+          "tip": "地块基本属性",
+          "uncertain": false
+        },
+        "attributes": {
+          "label": "地形贴图",
+          "tip": "地块地形",
+          "uncertain": false
+        },
+        "val2": {
+          "label": "战争迷雾",
+          "tip": "是否开启战争迷雾",
+          "uncertain": false
+        }
+      }
+    },
+    "StageTarget": {
+      "label": "关卡目标",
+      "fields": {
+        "target_type": {
+          "label": "目标类型",
+          "tip": "目标类型",
+          "uncertain": false
+        },
+        "target_value": {
+          "label": "目标值",
+          "tip": "目标值",
+          "uncertain": false
+        },
+        "param1": {
+          "label": "回合",
+          "tip": "回合",
+          "uncertain": false
+        },
+        "param2": {
+          "label": "目标ID",
+          "tip": "目标ID",
+          "uncertain": false
+        },
+        "unk": {
+          "label": "完成情况",
+          "tip": "完成情况",
+          "uncertain": false
+        }
+      }
+    },
+    "StageMetadata": {
+      "label": "关卡",
+      "fields": {
+        "targets": {
+          "label": "关卡目标",
+          "tip": "关卡目标",
+          "uncertain": false
+        },
+        "round_limit": {
+          "label": "总回合",
+          "tip": "关卡总回合",
+          "uncertain": false
+        }
+      }
+    },
+    "ReinforcePoint": {
+      "label": "增援点",
+      "fields": {
+        "cell_idx": {
+          "label": "地图格",
+          "tip": "地块ID",
+          "uncertain": false
+        },
+        "faction_id": {
+          "label": "朝向",
+          "tip": "增援部队朝向",
+          "uncertain": false
+        },
+        "val1": {
+          "label": "仅限海军",
+          "tip": "是否仅限海军",
+          "uncertain": false
+        },
+        "val2": {
+          "label": "兵种限制",
+          "tip": "兵种类型限制",
+          "uncertain": false
+        }
+      }
+    },
+    "BattleInfo": {
+      "label": "增援点",
+      "fields": {
+        "field_0": {
+          "label": "占位参数",
+          "tip": "*占位符",
+          "uncertain": true
+        },
+        "reinforce_points": {
+          "label": "增援点列表",
+          "tip": "增援点",
+          "uncertain": false
+        }
+      }
+    },
+    "FactionForceEntry": {
+      "label": "特种部队",
+      "fields": {
+        "country_id": {
+          "label": "部队ID",
+          "tip": "特种部队ID",
+          "uncertain": false
+        },
+        "strength": {
+          "label": "等级",
+          "tip": "特种部队等级",
+          "uncertain": false
+        },
+        "flag": {
+          "label": "招募冷却",
+          "tip": "招募冷却回合",
+          "uncertain": false
+        }
+      }
+    },
+    "FactionAssignEntry": {
+      "label": "卡牌状态",
+      "fields": {
+        "key_id": {
+          "label": "卡牌ID",
+          "tip": "卡牌ID",
+          "uncertain": false
+        },
+        "value": {
+          "label": "剩余冷却",
+          "tip": "卡牌剩余冷却回合",
+          "uncertain": false
+        }
+      }
+    },
+    "FactionTargetEntry": {
+      "label": "AI倾向",
+      "fields": {
+        "key_id": {
+          "label": "目标势力",
+          "tip": "目标势力ID",
+          "uncertain": false
+        },
+        "value": {
+          "label": "AI倾向值",
+          "tip": "AI倾向值",
+          "uncertain": false
+        }
+      }
+    },
+    "FactionArmyLimitEntry": {
+      "label": "击败统计",
+      "fields": {
+        "type_id": {
+          "label": "目标标记",
+          "tip": "country+220映射键=被击败部队army+168目标标记；主目标用1/3，附加用2/3",
+          "uncertain": false
+        },
+        "limit": {
+          "label": "累计击败",
+          "tip": "对应目标标记累计击败数；5C9760递增，非兵种上限",
+          "uncertain": false
+        }
+      }
+    },
+    "FactionTechBindEntry": {
+      "label": "势力加成",
+      "fields": {
+        "tech_id": {
+          "label": "加成ID",
+          "tip": "实际为共用buff配置Id，查全局+4264，非科技Id",
+          "uncertain": false
+        },
+        "param_1": {
+          "label": "剩余计数",
+          "tip": "buff剩余持续计数",
+          "uncertain": false
+        },
+        "param_2": {
+          "label": "轮转槽",
+          "tip": "递减轮转槽；匹配时递减计数并在<=0移除",
+          "uncertain": false
+        }
+      }
+    },
+    "FactionStageNum": {
+      "label": "国家行为树",
+      "fields": {
+        "stage_id": {
+          "label": "行为树编号",
+          "tip": "国家行为树btid",
+          "uncertain": false
+        },
+        "packed_data": {
+          "label": "运行状态",
+          "tip": "可选行为树运行状态",
+          "uncertain": false
+        }
+      }
+    },
+    "FactionDetailConfig": {
+      "label": "势力动态",
+      "fields": {
+        "general_pool": {
+          "label": "将领池",
+          "tip": "将领池GeneralSettings.Id",
+          "uncertain": false
+        },
+        "field_1": {
+          "label": "卡牌使用数",
+          "tip": "本战略回合付费使用卡牌次数",
+          "uncertain": false
+        },
+        "tech_ids": {
+          "label": "策略覆盖",
+          "tip": "实际为国家策略覆盖Id列表，查def_strategy.xml的id；非科技",
+          "uncertain": false
+        },
+        "field_3": {
+          "label": "已撤离数",
+          "tip": "已撤离部队计数",
+          "uncertain": false
+        },
+        "field_4": {
+          "label": "累计击杀",
+          "tip": "累计击杀计数",
+          "uncertain": false
+        },
+        "army_limits": {
+          "label": "击败分类",
+          "tip": "按目标标记分类的累计击败数",
+          "uncertain": false
+        },
+        "field_6": {
+          "label": "消耗状态",
+          "tip": "行为/特殊消耗状态位",
+          "uncertain": true
+        },
+        "field_7": {
+          "label": "选择关系",
+          "tip": "集团军阵营/选择关系状态",
+          "uncertain": false
+        },
+        "field_8": {
+          "label": "未知8",
+          "tip": "当前加载未读，存档构造器写0；原设计用途未知",
+          "uncertain": true
+        },
+        "field_9": {
+          "label": "未知9",
+          "tip": "当前加载未读，存档构造器写0；原设计用途未知",
+          "uncertain": true
+        },
+        "field_10": {
+          "label": "外交待办",
+          "tip": "外交状态待处理的战略回合",
+          "uncertain": false
+        },
+        "field_11": {
+          "label": "未知11",
+          "tip": "当前加载未读，存档构造器写0；原设计用途未知",
+          "uncertain": true
+        },
+        "field_12": {
+          "label": "判败已通知",
+          "tip": "判败/出局通知已处理",
+          "uncertain": false
+        },
+        "field_13": {
+          "label": "回合进行中",
+          "tip": "当前回合阶段进行中；mode3",
+          "uncertain": false
+        },
+        "field_14": {
+          "label": "已判败",
+          "tip": "已判败标志",
+          "uncertain": false
+        },
+        "field_15": {
+          "label": "战略出局",
+          "tip": "战略势力已出局标志",
+          "uncertain": false
+        },
+        "tech_binds": {
+          "label": "势力加成",
+          "tip": "实际为势力buff绑定",
+          "uncertain": false
+        },
+        "field_17": {
+          "label": "未知17",
+          "tip": "当前加载未读，存档构造器写0；原设计用途未知",
+          "uncertain": true
+        },
+        "field_18": {
+          "label": "未知18",
+          "tip": "当前加载未读，存档构造器写0；原设计用途未知",
+          "uncertain": true
+        },
+        "field_19": {
+          "label": "受限招募数",
+          "tip": "已招募受限特种团累计次数",
+          "uncertain": false
+        },
+        "field_20": {
+          "label": "科技进度",
+          "tip": "科技升级经验/工业进度余量",
+          "uncertain": false
+        },
+        "general_states": {
+          "label": "将领关联索引",
+          "tip": "与general_pool配对的关联索引；signed byte，缺失项加载为-1；不是存活bool",
+          "uncertain": false
+        },
+        "field_22": {
+          "label": "状态参数",
+          "tip": "country+200状态参数，具体规则用途未确认",
+          "uncertain": true
+        },
+        "field_23": {
+          "label": "征服计时A",
+          "tip": "征服回合倒计时A",
+          "uncertain": true
+        },
+        "field_24": {
+          "label": "征服计时B",
+          "tip": "征服回合倒计时B",
+          "uncertain": true
+        }
+      }
+    },
+    "Faction": {
+      "label": "势力",
+      "fields": {
+        "info": {
+          "label": "基础信息",
+          "tip": "势力数据",
+          "uncertain": false
+        },
+        "tiles": {
+          "label": "兵种科技",
+          "tip": "兵种科技等级",
+          "uncertain": false
+        },
+        "forces": {
+          "label": "特种部队",
+          "tip": "*特种部队数据",
+          "uncertain": true
+        },
+        "assignments": {
+          "label": "卡牌状态",
+          "tip": "*卡牌数据",
+          "uncertain": true
+        },
+        "detail_config": {
+          "label": "动态状态",
+          "tip": "势力动态",
+          "uncertain": false
+        },
+        "targets": {
+          "label": "AI倾向",
+          "tip": "*势力AI倾向值",
+          "uncertain": true
+        },
+        "stage_num": {
+          "label": "国家行为树",
+          "tip": "国家行为树ID",
+          "uncertain": false
+        },
+        "val1": {
+          "label": "集团军科技",
+          "tip": "集团军科技等级",
+          "uncertain": false
+        },
+        "val2": {
+          "label": "国家策略",
+          "tip": "国家策略ID",
+          "uncertain": false
+        },
+        "general_flag": {
+          "label": "战略AI",
+          "tip": "战略AI",
+          "uncertain": false
+        }
+      }
+    },
+    "FactionInfo": {
+      "label": "势力",
+      "fields": {
+        "factions": {
+          "label": "势力列表",
+          "tip": "势力列表",
+          "uncertain": false
+        }
+      }
+    },
+    "BuildingExtraData": {
+      "label": "占领奖励",
+      "fields": {
+        "param0": {
+          "label": "奖励类型",
+          "tip": "奖励类型",
+          "uncertain": false
+        },
+        "param1": {
+          "label": "奖励数量",
+          "tip": "奖励数量",
+          "uncertain": false
+        }
+      }
+    },
+    "BuildingData": {
+      "label": "建筑信息",
+      "fields": {
+        "val1": {
+          "label": "所属势力",
+          "tip": "归属势力ID",
+          "uncertain": false
+        },
+        "building_id": {
+          "label": "建筑ID",
+          "tip": "建筑ID",
+          "uncertain": false
+        },
+        "val2": {
+          "label": "雪地贴图",
+          "tip": "*使用雪地贴图",
+          "uncertain": true
+        },
+        "owner": {
+          "label": "贴图变体",
+          "tip": "贴图变体",
+          "uncertain": false
+        },
+        "dx": {
+          "label": "横向偏移",
+          "tip": "贴图偏移dx",
+          "uncertain": false
+        },
+        "dy": {
+          "label": "纵向偏移",
+          "tip": "贴图偏移dy",
+          "uncertain": false
+        }
+      }
+    },
+    "TriggerEventSub2": {
+      "label": "招募部队AI",
+      "fields": {
+        "field_0": {
+          "label": "AI类型",
+          "tip": "生成部队继承的AI类型",
+          "uncertain": false
+        },
+        "field_1": {
+          "label": "积极程度",
+          "tip": "生成部队继承的AI积极程度",
+          "uncertain": false
+        },
+        "field_2": {
+          "label": "目标地图格",
+          "tip": "生成部队继承的目标地图格号",
+          "uncertain": false
+        },
+        "field_3": {
+          "label": "移动限制",
+          "tip": "生成部队继承的移动限制",
+          "uncertain": false
+        },
+        "field_4": {
+          "label": "警戒半径",
+          "tip": "生成部队继承的警戒半径",
+          "uncertain": false
+        },
+        "field_5": {
+          "label": "目标单位UID",
+          "tip": "*不确定，从部队的AI参数格式来看，应该是目标部队UID",
+          "uncertain": true
+        },
+        "field_6": {
+          "label": "警戒地图格",
+          "tip": "*同上，应该是警戒地块ID",
+          "uncertain": true
+        }
+      }
+    },
+    "TriggerEventSub3": {
+      "label": "建筑加成",
+      "fields": {
+        "config_id": {
+          "label": "加成ID",
+          "tip": "*共用 buff ID",
+          "uncertain": true
+        },
+        "param_1": {
+          "label": "剩余计数",
+          "tip": "*剩余持续计数",
+          "uncertain": true
+        },
+        "param_2": {
+          "label": "轮转槽",
+          "tip": "*递减使用的回合轮转槽下标",
+          "uncertain": true
+        }
+      }
+    },
+    "TriggerEventSub4": {
+      "label": "增援落点",
+      "fields": {
+        "field_0": {
+          "label": "未知0",
+          "tip": "*不知道",
+          "uncertain": true
+        },
+        "field_1": {
+          "label": "评分修正",
+          "tip": "AI 增援落点评分修正",
+          "uncertain": false
+        },
+        "field_2": {
+          "label": "未知2",
+          "tip": "*不知道",
+          "uncertain": true
+        }
+      }
+    },
+    "TriggerEventSub5": {
+      "label": "建筑行为树",
+      "fields": {
+        "agent_type": {
+          "label": "行为树编号",
+          "tip": "行为树 btid",
+          "uncertain": false
+        },
+        "packed_data": {
+          "label": "运行状态",
+          "tip": "*可选的类型化序列化状态，用于恢复已绑定行为树",
+          "uncertain": true
+        }
+      }
+    },
+    "TriggerEventBldg": {
+      "label": "建筑",
+      "fields": {
+        "building_data": {
+          "label": "基础信息",
+          "tip": "建筑数据",
+          "uncertain": false
+        },
+        "field_1": {
+          "label": "占领奖励",
+          "tip": "占领奖励",
+          "uncertain": false
+        },
+        "field_2": {
+          "label": "招募部队AI",
+          "tip": "*从本建筑招募的部队继承的行为参数",
+          "uncertain": true
+        },
+        "field_3": {
+          "label": "建筑加成",
+          "tip": "*建筑buff标志",
+          "uncertain": true
+        },
+        "field_4": {
+          "label": "增援落点",
+          "tip": "*AI增援落点配置",
+          "uncertain": true
+        },
+        "field_5": {
+          "label": "建筑行为树",
+          "tip": "建筑行为树btid",
+          "uncertain": false
+        },
+        "field_6": {
+          "label": "招募朝向",
+          "tip": "*新招募部队的兵模初始朝向",
+          "uncertain": true
+        },
+        "field_7": {
+          "label": "集团军设施",
+          "tip": "集团军设施",
+          "uncertain": false
+        }
+      }
+    },
+    "TriggerEventFort": {
+      "label": "工事",
+      "fields": {
+        "fort_id": {
+          "label": "工事ID",
+          "tip": "工事ID",
+          "uncertain": false
+        },
+        "field_1": {
+          "label": "建造轮转槽",
+          "tip": "*建造倒计时递减轮转槽",
+          "uncertain": true
+        },
+        "field_2": {
+          "label": "剩余建造回合",
+          "tip": "剩余建造回合数",
+          "uncertain": false
+        },
+        "field_3": {
+          "label": "贴图朝向",
+          "tip": "贴图朝向",
+          "uncertain": false
+        }
+      }
+    },
+    "TriggerEvent": {
+      "label": "地块事件",
+      "fields": {
+        "tile_index": {
+          "label": "地图格",
+          "tip": "地块ID",
+          "uncertain": false
+        },
+        "field_1": {
+          "label": "城市名称",
+          "tip": "城市名称ID",
+          "uncertain": false
+        },
+        "field_2": {
+          "label": "目标标记",
+          "tip": "目标类型",
+          "uncertain": false
+        },
+        "detail_bldg": {
+          "label": "建筑",
+          "tip": "建筑数据",
+          "uncertain": false
+        },
+        "detail_fort": {
+          "label": "工事",
+          "tip": "工事数据",
+          "uncertain": false
+        },
+        "field_5": {
+          "label": "着火状态",
+          "tip": "着火情况",
+          "uncertain": false
+        },
+        "field_6": {
+          "label": "占领奖励",
+          "tip": "*占领奖励",
+          "uncertain": true
+        }
+      }
+    },
+    "TriggerNode": {
+      "label": "省份",
+      "fields": {
+        "field_0": {
+          "label": "锚点地图格",
+          "tip": "*省份锚点格号",
+          "uncertain": true
+        },
+        "field_1": {
+          "label": "所属势力",
+          "tip": "省份归属",
+          "uncertain": false
+        },
+        "field_2": {
+          "label": "是否有效",
+          "tip": "*省份是否有效",
+          "uncertain": true
+        },
+        "field_3": {
+          "label": "间谍标记",
+          "tip": "*间谍buff标志",
+          "uncertain": true
+        },
+        "field_4": {
+          "label": "情报误导",
+          "tip": "*情报误导buff标志",
+          "uncertain": true
+        }
+      }
+    },
+    "TriggerInfo": {
+      "label": "地标与省份",
+      "fields": {
+        "events": {
+          "label": "地块事件",
+          "tip": "建筑和工事数据",
+          "uncertain": false
+        },
+        "conditions": {
+          "label": "撤离动画",
+          "tip": "*撤离点动画标记",
+          "uncertain": true
+        },
+        "var_values": {
+          "label": "省份划分",
+          "tip": "集团军省份划分",
+          "uncertain": false
+        },
+        "var_ids": {
+          "label": "图标坐标",
+          "tip": "*集团军图标坐标",
+          "uncertain": true
+        },
+        "actions": {
+          "label": "开放矩形",
+          "tip": "*地图开放矩形列表",
+          "uncertain": true
+        },
+        "enabled": {
+          "label": "启用省份",
+          "tip": "是否启用省份系统",
+          "uncertain": false
+        },
+        "triggers": {
+          "label": "省份数据",
+          "tip": "集团军省份数据",
+          "uncertain": false
+        },
+        "tag": {
+          "label": "开放序号",
+          "tip": "*当前已开放的最高矩形序号",
+          "uncertain": true
+        }
+      }
+    },
+    "AIAgentBehavior": {
+      "label": "部队AI",
+      "fields": {
+        "field_0": {
+          "label": "AI类型",
+          "tip": "AI类型",
+          "uncertain": false
+        },
+        "field_1": {
+          "label": "积极程度",
+          "tip": "AI积极程度",
+          "uncertain": false
+        },
+        "field_2": {
+          "label": "目标地图格",
+          "tip": "目标地块ID",
+          "uncertain": false
+        },
+        "field_3": {
+          "label": "移动限制",
+          "tip": "移动限制：0无该限制/1禁止上陆/2禁止下海",
+          "uncertain": false
+        },
+        "field_4": {
+          "label": "警戒半径",
+          "tip": "警戒半径",
+          "uncertain": false
+        },
+        "field_5": {
+          "label": "目标单位UID",
+          "tip": "目标部队UID",
+          "uncertain": false
+        },
+        "field_6": {
+          "label": "警戒地图格",
+          "tip": "警戒地块ID",
+          "uncertain": false
+        }
+      }
+    },
+    "Table8Entry": {
+      "label": "部队加成",
+      "fields": {
+        "config_id": {
+          "label": "加成ID",
+          "tip": "*技能、状态或加成在表里的 id",
+          "uncertain": true
+        },
+        "param_1": {
+          "label": "剩余计数",
+          "tip": "*剩余持续计数，匹配时机递减，归零移除",
+          "uncertain": true
+        },
+        "param_2": {
+          "label": "轮转槽",
+          "tip": "*递减时机槽，与当前国家轮转槽比较",
+          "uncertain": true
+        }
+      }
+    },
+    "AIAgentTable8": {
+      "label": "部队动态",
+      "fields": {
+        "field_0": {
+          "label": "移动计数",
+          "tip": "*移动过程计数；当前路径长度写入army+140，结束行动清零",
+          "uncertain": true
+        },
+        "field_1": {
+          "label": "升级次数",
+          "tip": "*升级次数计数",
+          "uncertain": true
+        },
+        "binds": {
+          "label": "临时加成",
+          "tip": "*主动/临时buff持续条目；原版开局样本整块缺省",
+          "uncertain": true
+        },
+        "field_3": {
+          "label": "再动次数",
+          "tip": "*本回合再动触发次数",
+          "uncertain": true
+        },
+        "field_4": {
+          "label": "航母补充",
+          "tip": "航母回合补充计数",
+          "uncertain": false
+        },
+        "field_5": {
+          "label": "回合临时值",
+          "tip": "回合临时数值",
+          "uncertain": true
+        },
+        "field_6": {
+          "label": "状态位",
+          "tip": "*战中状态bit组合：补编/恢复禁用等；详见04完整研究",
+          "uncertain": true
+        },
+        "field_7": {
+          "label": "记忆地图格",
+          "tip": "记忆格号/驻点记录",
+          "uncertain": false
+        }
+      }
+    },
+    "AIAgentTable10": {
+      "label": "特种配置",
+      "fields": {
+        "field_0": {
+          "label": "特种部队",
+          "tip": "特种部队ID",
+          "uncertain": false
+        },
+        "field_1": {
+          "label": "等级",
+          "tip": "特种部队等级",
+          "uncertain": false
+        },
+        "field_2": {
+          "label": "当前生命",
+          "tip": "特种部队当前血量",
+          "uncertain": false
+        },
+        "field_3": {
+          "label": "最大生命",
+          "tip": "特种部队最大血量",
+          "uncertain": false
+        },
+        "field_4": {
+          "label": "血率",
+          "tip": "特种部队血率",
+          "uncertain": false
+        },
+        "field_5": {
+          "label": "升级标记",
+          "tip": "特种部队升级，bit0生命/bit1攻击/bit3移动",
+          "uncertain": false
+        }
+      }
+    },
+    "AIAgentTable11": {
+      "label": "将领配置",
+      "fields": {
+        "general_id": {
+          "label": "将领ID",
+          "tip": "将领ID",
+          "uncertain": false
+        },
+        "param1": {
+          "label": "激活状态",
+          "tip": "*激活状态",
+          "uncertain": true
+        },
+        "param2": {
+          "label": "晋升等级",
+          "tip": "晋升等级",
+          "uncertain": false
+        },
+        "field_3": {
+          "label": "勋章ID",
+          "tip": "勋章ID",
+          "uncertain": false
+        }
+      }
+    },
+    "AIAgentTable12": {
+      "label": "部队行为树",
+      "fields": {
+        "field_0": {
+          "label": "行为树编号",
+          "tip": "*部队行为树btid",
+          "uncertain": true
+        },
+        "cells": {
+          "label": "运行状态",
+          "tip": "行为树运行状态的序列化字节流",
+          "uncertain": false
+        }
+      }
+    },
+    "AIAgent": {
+      "label": "部队",
+      "fields": {
+        "agent_info": {
+          "label": "基础信息",
+          "tip": "部队信息",
+          "uncertain": false
+        },
+        "field_1": {
+          "label": "国家兵种加成",
+          "tip": "国家兵种加成",
+          "uncertain": false
+        },
+        "field_2": {
+          "label": "关键目标",
+          "tip": "*关键目标标记",
+          "uncertain": true
+        },
+        "field_3": {
+          "label": "部队AI",
+          "tip": "*部队AI行为",
+          "uncertain": true
+        },
+        "field_4": {
+          "label": "未知4",
+          "tip": "*不知道",
+          "uncertain": true
+        },
+        "field_5": {
+          "label": "初始士气",
+          "tip": "初始士气",
+          "uncertain": false
+        },
+        "field_6": {
+          "label": "士气恢复",
+          "tip": "*士气恢复回合数",
+          "uncertain": true
+        },
+        "faction_id_extra": {
+          "label": "结算状态",
+          "tip": "*行动/攻击缓存/特殊结算状态位",
+          "uncertain": true
+        },
+        "extra_table_8": {
+          "label": "动态状态",
+          "tip": "*动态状态，buff等",
+          "uncertain": true
+        },
+        "field_9": {
+          "label": "未用状态",
+          "tip": "*似乎未使用",
+          "uncertain": true
+        },
+        "extra_table_10": {
+          "label": "特种配置",
+          "tip": "特种部队数据",
+          "uncertain": false
+        },
+        "extra_table_11": {
+          "label": "将领配置",
+          "tip": "将领数据",
+          "uncertain": false
+        },
+        "extra_table_12": {
+          "label": "部队行为树",
+          "tip": "*部队行为树绑定与可选运行状态",
+          "uncertain": true
+        },
+        "field_13": {
+          "label": "未知13",
+          "tip": "*不知道，都是0",
+          "uncertain": true
+        },
+        "field_14": {
+          "label": "击败奖励",
+          "tip": "击败奖励",
+          "uncertain": false
+        }
+      }
+    },
+    "AIBehavior": {
+      "label": "部队组",
+      "fields": {
+        "flag": {
+          "label": "组ID",
+          "tip": "部队组ID",
+          "uncertain": false
+        },
+        "params": {
+          "label": "成员UID",
+          "tip": "部队组成员UID",
+          "uncertain": false
+        }
+      }
+    },
+    "AIRoute": {
+      "label": "战略驻军组",
+      "fields": {
+        "flag": {
+          "label": "容器ID",
+          "tip": "*战略驻军容器ID",
+          "uncertain": true
+        },
+        "cells": {
+          "label": "成员UID",
+          "tip": "*驻军成员UID列表",
+          "uncertain": true
+        }
+      }
+    },
+    "AIInfo": {
+      "label": "部队",
+      "fields": {
+        "agents": {
+          "label": "单位列表",
+          "tip": "单位列表",
+          "uncertain": false
+        },
+        "behaviors": {
+          "label": "部队组",
+          "tip": "部队组",
+          "uncertain": false
+        },
+        "faction_id": {
+          "label": "下个单位UID",
+          "tip": "*最大单位UID+1",
+          "uncertain": true
+        },
+        "routes": {
+          "label": "战略驻军组",
+          "tip": "*集团军战略驻军归组",
+          "uncertain": true
+        }
+      }
+    },
+    "SubRegion": {
+      "label": "Lua触发组",
+      "fields": {
+        "id": {
+          "label": "触发组ID",
+          "tip": "触发组 Id；events 每行第二项绑定此 Id，按键查 map，非向量下标",
+          "uncertain": false
+        },
+        "name": {
+          "label": "回调函数",
+          "tip": "Lua 回调函数名（如 trigger_handle_1），非地图区域显示名",
+          "uncertain": false
+        },
+        "flag": {
+          "label": "仍可触发",
+          "tip": "armed：仍可触发；同组任一事件成功后 false；缺省 true，保存当前状态",
+          "uncertain": false
+        }
+      }
+    },
+    "RegionInfo": {
+      "label": "Lua触发状态",
+      "fields": {
+        "name": {
+          "label": "脚本路径",
+          "tip": "保存的关卡脚本逻辑路径；成功加载时写 trigger/stage%d.lua；本字段加载只恢复字符串",
+          "uncertain": false
+        },
+        "sub_regions": {
+          "label": "触发组",
+          "tip": "Lua 触发组列表：Id / 回调函数名 / 尚可触发标志",
+          "uncertain": false
+        },
+        "events": {
+          "label": "事件数据",
+          "tip": "嵌套打包数组：[[事件类型, 触发组Id, 参数...], ...]；类型 1..14，同组为 OR",
+          "uncertain": false
+        },
+        "properties": {
+          "label": "待执行动作",
+          "tip": "待执行动作队列：[[动作类型, 参数...], ...]；类型 0..17，参数含首项编号，无组Id前缀",
+          "uncertain": false
+        }
+      }
+    },
+    "CardEntry": {
+      "label": "指定格增援",
+      "fields": {
+        "card_id": {
+          "label": "目标地图格",
+          "tip": "投放目标格号；有符号读取，-1为自动目标编码",
+          "uncertain": false
+        },
+        "count": {
+          "label": "单位UID",
+          "tip": "已有部队UID，非数量或兵种配置Id",
+          "uncertain": false
+        },
+        "turn_cooldown": {
+          "label": "执行回合",
+          "tip": "计划执行的绝对回合；阻塞时可顺延，非冷却时长",
+          "uncertain": false
+        }
+      }
+    },
+    "FactionCardsConfig": {
+      "label": "按格增援",
+      "fields": {
+        "faction_id": {
+          "label": "投放地图格",
+          "tip": "投放/驻军格号，作为增援管理器+20 map的键，非势力Id",
+          "uncertain": false
+        },
+        "cards": {
+          "label": "待执行增援",
+          "tip": "该格的部队增援待执行列表",
+          "uncertain": false
+        }
+      }
+    },
+    "LimitEntry": {
+      "label": "自动增援",
+      "fields": {
+        "unit_id": {
+          "label": "目标地图格",
+          "tip": "目标格号",
+          "uncertain": false
+        },
+        "max_limit": {
+          "label": "单位UID",
+          "tip": "已有部队UID",
+          "uncertain": false
+        },
+        "current_count": {
+          "label": "执行回合",
+          "tip": "计划执行的绝对回合",
+          "uncertain": false
+        }
+      }
+    },
+    "FactionLimitsConfig": {
+      "label": "按势力增援",
+      "fields": {
+        "faction_id": {
+          "label": "势力",
+          "tip": "局内势力ID",
+          "uncertain": false
+        },
+        "limits": {
+          "label": "待执行增援",
+          "tip": "自动投放的部队增援待执行列表",
+          "uncertain": false
+        }
+      }
+    },
+    "TechUpgradeEntry": {
+      "label": "待用卡牌",
+      "fields": {
+        "tech_id": {
+          "label": "卡牌ID",
+          "tip": "谋略卡配置Id；492740到回合后生成CUseCardCommand",
+          "uncertain": false
+        },
+        "level": {
+          "label": "保留值",
+          "tip": "附带保存值，业务用途未确认；两版加载读id0两次，未读本字段",
+          "uncertain": true
+        },
+        "turn": {
+          "label": "使用回合",
+          "tip": "计划使用卡牌的绝对回合",
+          "uncertain": false
+        }
+      }
+    },
+    "TechUpgradeConfig": {
+      "label": "卡牌队列",
+      "fields": {
+        "faction_id": {
+          "label": "势力",
+          "tip": "局内势力Id，增援管理器+44 map的键",
+          "uncertain": false
+        },
+        "upgrades": {
+          "label": "待用卡牌",
+          "tip": "待使用谋略卡记录，按turn排序",
+          "uncertain": false
+        }
+      }
+    },
+    "GeneralDiplomacyEntry": {
+      "label": "可购买增援",
+      "fields": {
+        "general_id": {
+          "label": "增援配置ID",
+          "tip": "本关ReinforcementSettings.Id；与BattleIdent合成查配置，非将领Id",
+          "uncertain": false
+        },
+        "status": {
+          "label": "剩余次数",
+          "tip": "剩余可投放次数/份数；成功投放递减，非外交状态",
+          "uncertain": false
+        },
+        "is_active": {
+          "label": "已支付",
+          "tip": "已支付军需并启用此条目；4F6820设true后投放命令才接受",
+          "uncertain": false
+        }
+      }
+    },
+    "CityStatus": {
+      "label": "空中支援",
+      "fields": {
+        "x": {
+          "label": "支援类型",
+          "tip": "空中支援类型编号，配置管理器+4840的类型索引，非X坐标",
+          "uncertain": false
+        },
+        "owner": {
+          "label": "发起机场",
+          "tip": "支援发起/机场格号；-1为自动选机场编码，非拥有国Id",
+          "uncertain": false
+        },
+        "y": {
+          "label": "势力",
+          "tip": "发起支援的局内势力Id，非Y坐标",
+          "uncertain": false
+        },
+        "level": {
+          "label": "执行回合",
+          "tip": "计划执行绝对回合；失败/阻塞时可顺延，非城市等级",
+          "uncertain": false
+        }
+      }
+    },
+    "FactionCityStatus": {
+      "label": "按机场支援",
+      "fields": {
+        "faction_id": {
+          "label": "发起机场",
+          "tip": "支援发起/机场格号，增援管理器+52 map的键，非势力Id",
+          "uncertain": false
+        },
+        "status_list": {
+          "label": "待执行支援",
+          "tip": "待执行空中支援记录",
+          "uncertain": false
+        }
+      }
+    },
+    "HarborStatus": {
+      "label": "自动支援",
+      "fields": {
+        "x": {
+          "label": "支援类型",
+          "tip": "空中支援类型编号，非X坐标",
+          "uncertain": false
+        },
+        "owner": {
+          "label": "发起机场",
+          "tip": "支援发起/机场格号；-1让执行器选择机场，攻击落点另行计算",
+          "uncertain": false
+        },
+        "y": {
+          "label": "势力",
+          "tip": "发起支援的局内势力Id，非Y坐标",
+          "uncertain": false
+        },
+        "level": {
+          "label": "执行回合",
+          "tip": "计划执行的绝对回合，非港口等级",
+          "uncertain": false
+        }
+      }
+    },
+    "FactionHarborStatus": {
+      "label": "按势力支援",
+      "fields": {
+        "faction_id": {
+          "label": "势力",
+          "tip": "局内势力Id，增援管理器+60 map的键",
+          "uncertain": false
+        },
+        "status_list": {
+          "label": "待执行支援",
+          "tip": "待执行空中支援记录",
+          "uncertain": false
+        }
+      }
+    },
+    "StageConfig": {
+      "label": "增援与军需",
+      "fields": {
+        "faction_cards": {
+          "label": "按格增援",
+          "tip": "按投放格分组的已有部队增援队列，非卡牌",
+          "uncertain": false
+        },
+        "faction_limits": {
+          "label": "按势力增援",
+          "tip": "按势力分组的已有部队增援队列，非兵力限制",
+          "uncertain": false
+        },
+        "tech_upgrades": {
+          "label": "卡牌队列",
+          "tip": "按势力分组的待使用谋略卡队列，非科技",
+          "uncertain": false
+        },
+        "generals_diplomacy": {
+          "label": "可购买增援",
+          "tip": "本关可购买增援条目的剩余次数和已支付状态",
+          "uncertain": false
+        },
+        "field_4": {
+          "label": "剩余军需",
+          "tip": "当前剩余军需Supply；manager+76 CVar，购买增援扣除",
+          "uncertain": false
+        },
+        "cities_status": {
+          "label": "按机场支援",
+          "tip": "按机场格分组的空中支援队列，非城市状态",
+          "uncertain": false
+        },
+        "harbors_status": {
+          "label": "按势力支援",
+          "tip": "按势力分组的空中支援队列，非港口状态",
+          "uncertain": false
+        },
+        "disabled_skills": {
+          "label": "已用折扣奖章",
+          "tip": "本局已使用增援折扣奖章ItemSettings.Id集合，非SkillId",
+          "uncertain": false
+        }
+      }
+    },
+    "Decal": {
+      "label": "天气",
+      "fields": {
+        "decal_type": {
+          "label": "天气类型",
+          "tip": "天气：0正常/晴，1雨，2雷雨（雨+雷电），3雪；1/2同雨图标和移动惩罚",
+          "uncertain": false
+        },
+        "x": {
+          "label": "开始回合",
+          "tip": "开始内部GameRound，包含；非地图坐标",
+          "uncertain": false
+        },
+        "y": {
+          "label": "持续回合",
+          "tip": "持续回合数；生效x<=GameRound<x+y，0不生效；非结束回合",
+          "uncertain": false
+        }
+      }
+    },
+    "DecalInfo": {
+      "label": "天气",
+      "fields": {
+        "decals": {
+          "label": "天气列表",
+          "tip": "天气列表",
+          "uncertain": false
+        }
+      }
+    },
+    "ViewBoundary": {
+      "label": "玩家将领池",
+      "fields": {
+        "entries": {
+          "label": "将领列表",
+          "tip": "将领数据",
+          "uncertain": false
+        }
+      }
+    },
+    "Root": {
+      "label": "关卡",
+      "fields": {
+        "version": {
+          "label": "结构版本",
+          "tip": "文件结构版本号 (通常为 1)",
+          "uncertain": false
+        },
+        "map_terrain": {
+          "label": "地形",
+          "tip": "地形",
+          "uncertain": false
+        },
+        "stage_metadata": {
+          "label": "关卡",
+          "tip": "关卡",
+          "uncertain": false
+        },
+        "battle_info": {
+          "label": "增援点",
+          "tip": "地图增援点",
+          "uncertain": false
+        },
+        "faction_info": {
+          "label": "势力",
+          "tip": "势力",
+          "uncertain": false
+        },
+        "trigger_info": {
+          "label": "地标与省份",
+          "tip": "建筑、工事、集团军省份",
+          "uncertain": false
+        },
+        "ai_info": {
+          "label": "部队",
+          "tip": "部队",
+          "uncertain": false
+        },
+        "region_info": {
+          "label": "Lua触发状态",
+          "tip": "关卡Lua触发状态。似乎初始为空",
+          "uncertain": false
+        },
+        "stage_config": {
+          "label": "增援与军需",
+          "tip": "CEntityReinforcement的队列、可购买增援和军需状态，战役/战略共用。似乎初始为空",
+          "uncertain": false
+        },
+        "decal_info": {
+          "label": "天气",
+          "tip": "天气",
+          "uncertain": false
+        },
+        "rle_metadata": {
+          "label": "共用行为树",
+          "tip": "*国家/部队/建筑共用行为树定义库；内层FlexBuffers列表，以btid绑定；非RLE，非各对象运行状态，详见14研究",
+          "uncertain": true
+        },
+        "view_boundary": {
+          "label": "玩家将领池",
+          "tip": "本局玩家将领池保存快照。似乎初始为空",
+          "uncertain": false
+        }
+      }
+    }
+  }
+}

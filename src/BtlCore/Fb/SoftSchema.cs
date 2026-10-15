@@ -66,80 +66,25 @@ namespace BtlCore.Fb
         public int VectorStructSize => VectorStructMembers?.Sum(m => m.Size) ?? 0;
     }
 
-    /// <summary>进程内一份 fbs → hint 缓存。BtlToFront / FrontToBtl / 编辑器共用。</summary>
+    /// <summary>旧调用的默认上下文入口。已创建文档持有自己的 Context。</summary>
     public static class SoftSchema
     {
-        static readonly object Gate = new object();
-        static FbsSchema _schema;
-        static bool _tried;
-        static readonly Dictionary<string, FieldHint> HintCache =
-            new Dictionary<string, FieldHint>(StringComparer.Ordinal);
-
-        /// <summary>已解析的 battle.fbs。第一次访问时加载，失败则为 null。</summary>
-        public static FbsSchema Schema
+        static readonly object Gate = new();
+        static SchemaContext _default;
+        public static SchemaContext DefaultContext
         {
-            get
-            {
-                lock (Gate)
-                {
-                    if (!_tried)
-                    {
-                        _tried = true;
-                        _schema = TryLoad();
-                    }
-                    return _schema;
-                }
-            }
+            get { lock (Gate) return _default ??= new SchemaContext(TryLoad()); }
         }
-
-        public static string RootType => Schema?.RootType ?? "Root";
-
-        /// <summary>测试或 Dump 工具可注入自己的 schema，并清空 hint 缓存。</summary>
+        public static FbsSchema Schema => DefaultContext.Schema;
+        public static string RootType => DefaultContext.RootType;
         public static void SetSchema(FbsSchema schema)
         {
-            lock (Gate)
-            {
-                _schema = schema;
-                _tried = true;
-                HintCache.Clear();
-            }
+            lock (Gate) _default = new SchemaContext(schema);
         }
-
-        /// <summary>查 tableContext 上 fieldId 的读写提示。没有 fbs 或没有这个字段则 false。</summary>
-        public static bool TryGet(string tableContext, int fieldId, out FieldHint hint)
-        {
-            hint = null;
-            var schema = Schema;
-            if (schema == null || string.IsNullOrEmpty(tableContext)) return false;
-
-            string key = tableContext + "#" + fieldId.ToString(CultureInfo.InvariantCulture);
-            lock (Gate)
-            {
-                if (HintCache.TryGetValue(key, out hint))
-                    return hint != null;
-            }
-
-            if (!schema.TryGetField(tableContext, fieldId, out var field) || field == null)
-            {
-                lock (Gate) HintCache[key] = null;
-                return false;
-            }
-
-            hint = FromFbs(schema, field);
-            lock (Gate) HintCache[key] = hint;
-            return hint != null;
-        }
-
-        /// <summary>按结构体名取出成员类型列表，给编辑器新建 AgentInfo / Size 等用。</summary>
-        public static bool TryStructMembers(string structName, out StructMember[] members)
-        {
-            members = null;
-            var schema = Schema;
-            if (schema == null || string.IsNullOrEmpty(structName) || !schema.IsStruct(structName))
-                return false;
-            members = ToMembers(schema, structName);
-            return members != null && members.Length > 0;
-        }
+        public static bool TryGet(string tableContext, int fieldId, out FieldHint hint) =>
+            DefaultContext.TryGet(tableContext, fieldId, out hint);
+        public static bool TryStructMembers(string structName, out StructMember[] members) =>
+            DefaultContext.TryStructMembers(structName, out members);
 
         /// <summary>该 Front 标量类型的「零」：整数 0、float 0、bool false。新建 struct 填坑用。</summary>
         public static object DefaultValue(string t) => t switch
@@ -185,74 +130,6 @@ namespace BtlCore.Fb
 
             using var reader = new StreamReader(stream);
             return FbsSchema.LoadFromText(reader.ReadToEnd(), "embedded:battle.fbs");
-        }
-
-        /// <summary>fbs 类型串 → FieldHint。bool 向量按 u8 存（FB 里 bool 向量就是字节）。</summary>
-        static FieldHint FromFbs(FbsSchema schema, FbsField field)
-        {
-            string t = field.Type;
-            if (string.IsNullOrEmpty(t)) return null;
-
-            if (FbsSchema.IsVectorType(t))
-            {
-                string elem = schema.ResolveChildType(t);
-                if (FbsSchema.IsStringType(elem))
-                    return new FieldHint { Kind = FieldKind.Vector, VectorElem = "string" };
-                if (FbsSchema.IsScalarType(elem))
-                {
-                    string st = ToFrontScalar(elem);
-                    return new FieldHint { Kind = FieldKind.Vector, VectorElem = st == "bool" ? "u8" : st };
-                }
-                if (schema.IsStruct(elem))
-                {
-                    return new FieldHint
-                    {
-                        Kind = FieldKind.Vector,
-                        VectorElem = "struct",
-                        VectorElemTable = elem,
-                        StructName = elem,
-                        VectorStructMembers = ToMembers(schema, elem)
-                    };
-                }
-                return new FieldHint
-                {
-                    Kind = FieldKind.Vector,
-                    VectorElem = "table",
-                    VectorElemTable = elem ?? ""
-                };
-            }
-
-            if (FbsSchema.IsStringType(t))
-                return new FieldHint { Kind = FieldKind.String };
-
-            if (FbsSchema.IsScalarType(t))
-            {
-                string st = ToFrontScalar(t);
-                if (st == "bool")
-                    return new FieldHint { Kind = FieldKind.Bool, ScalarT = "bool" };
-                return new FieldHint { Kind = FieldKind.Scalar, ScalarT = st };
-            }
-
-            if (schema.IsStruct(t))
-            {
-                return new FieldHint
-                {
-                    Kind = FieldKind.Struct,
-                    StructName = t,
-                    StructMembers = ToMembers(schema, t)
-                };
-            }
-
-            return new FieldHint { Kind = FieldKind.Table, ChildTable = t };
-        }
-
-        static StructMember[] ToMembers(FbsSchema schema, string structName)
-        {
-            var fields = schema.StructMembers(structName);
-            var list = new List<StructMember>(fields.Count);
-            foreach (var f in fields)
-                list.Add(new StructMember { T = ToFrontScalar(f.Type) });
-            return list.ToArray();
         }
 
         /// <summary>battle.fbs 的 ushort/ubyte 等 → Front 的 u16/u8。</summary>

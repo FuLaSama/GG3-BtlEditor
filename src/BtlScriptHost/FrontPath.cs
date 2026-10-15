@@ -10,17 +10,19 @@ using BtlCore.Front;
 
 namespace BtlCore.Scripting
 {
-    static class FrontPath
+    sealed class FrontPath
     {
-        public static object GetScalar(BtlFrontDocument doc, string path)
+        readonly SchemaContext _context;
+        public FrontPath(SchemaContext context) => _context = context;
+        public object GetScalar(BtlFrontDocument doc, string path)
         {
             var steps = Segments(path);
-            var parent = Walk(doc.Root, SoftSchema.RootType, steps, steps.Length - 1, create: false);
+            var parent = Walk(doc.Root, _context.RootType, steps, steps.Length - 1, create: false);
             if (parent == null) return null;
             return ReadScalar(parent, steps[^1]);
         }
 
-        public static object GetScalar(BtlTable table, string typeName, string path)
+        public object GetScalar(BtlTable table, string typeName, string path)
         {
             var steps = Segments(path, keepRoot: true);
             var parent = Walk(table, typeName, steps, steps.Length - 1, create: false);
@@ -28,34 +30,34 @@ namespace BtlCore.Scripting
             return ReadScalar(parent, steps[^1]);
         }
 
-        public static void SetScalar(BtlFrontDocument doc, string path, object value)
+        public void SetScalar(BtlFrontDocument doc, string path, object value)
         {
             var steps = Segments(path);
-            var parent = Walk(doc.Root, SoftSchema.RootType, steps, steps.Length - 1, create: true);
+            var parent = Walk(doc.Root, _context.RootType, steps, steps.Length - 1, create: true);
             WriteScalar(parent, steps[^1], value);
         }
 
-        public static void SetScalar(BtlTable table, string typeName, string path, object value)
+        public void SetScalar(BtlTable table, string typeName, string path, object value)
         {
             var steps = Segments(path, keepRoot: true);
             var parent = Walk(table, typeName, steps, steps.Length - 1, create: true);
             WriteScalar(parent, steps[^1], value);
         }
 
-        public static void Ensure(BtlFrontDocument doc, string path)
+        public void Ensure(BtlFrontDocument doc, string path)
         {
             var steps = Segments(path);
-            Walk(doc.Root, SoftSchema.RootType, steps, steps.Length, create: true);
+            Walk(doc.Root, _context.RootType, steps, steps.Length, create: true);
         }
 
-        public static void Ensure(BtlTable table, string typeName, string path)
+        public void Ensure(BtlTable table, string typeName, string path)
         {
             if (table == null) throw new FrontEditException("路径无法定位");
             var steps = Segments(path, keepRoot: true);
             Walk(table, typeName, steps, steps.Length, create: true);
         }
 
-        public static object GetMemberOnTable(BtlTable table, string typeName, string path)
+        public object GetMemberOnTable(BtlTable table, string typeName, string path)
         {
             if (table == null) return null;
             var steps = Segments(path, keepRoot: true);
@@ -67,7 +69,7 @@ namespace BtlCore.Scripting
             return ReadStructMember(st, loc.TypeName, steps[^1]);
         }
 
-        public static void SetMemberOnTable(BtlTable table, string typeName, string path, object value)
+        public void SetMemberOnTable(BtlTable table, string typeName, string path, object value)
         {
             if (table == null) throw new FrontEditException("路径无法定位");
             var steps = Segments(path, keepRoot: true);
@@ -79,18 +81,18 @@ namespace BtlCore.Scripting
             SetStructMember(st, loc.TypeName, steps[^1], value);
         }
 
-        public static int Count(BtlFrontDocument doc, string path)
+        public int Count(BtlFrontDocument doc, string path)
         {
             var vec = FindVector(doc, path, create: false);
             return vec?.Vector.V.Count ?? 0;
         }
 
-        public static object At(BtlFrontDocument doc, string path, int index, out string elemType)
+        public object At(BtlFrontDocument doc, string path, int index, out string elemType)
         {
             return At(doc, path, index, out elemType, out _);
         }
 
-        public static object At(BtlFrontDocument doc, string path, int index, out string elemType, out BtlVector vector)
+        public object At(BtlFrontDocument doc, string path, int index, out string elemType, out BtlVector vector)
         {
             var vec = FindVector(doc, path, create: false) ?? throw Missing();
             elemType = vec.ElemType;
@@ -100,7 +102,7 @@ namespace BtlCore.Scripting
             return vec.Vector.V[index];
         }
 
-        public static void SetAt(BtlFrontDocument doc, string path, int index, object value)
+        public void SetAt(BtlFrontDocument doc, string path, int index, object value)
         {
             var found = FindVector(doc, path, create: false) ?? throw Missing();
             if (found.Hint.VectorElem == "table" || found.Hint.VectorElem == "struct")
@@ -108,14 +110,14 @@ namespace BtlCore.Scripting
             FrontEdit.SetAt(found.Vector, index, Coerce(found.Hint.VectorElem, value));
         }
 
-        public static void SetAtNode(BtlFrontDocument doc, string path, int index, BtlNode node)
+        public void SetAtNode(BtlFrontDocument doc, string path, int index, BtlNode node)
         {
             if (node == null) throw new FrontEditException("不能插入空元素");
             var found = FindVector(doc, path, create: false) ?? throw Missing();
             FrontEdit.SetAt(found.Vector, index, node);
         }
 
-        public static object AppendEmpty(BtlFrontDocument doc, string path)
+        public object AppendEmpty(BtlFrontDocument doc, string path)
         {
             var found = FindVector(doc, path, create: true) ?? throw Missing();
             object item = EmptyElement(found);
@@ -123,19 +125,19 @@ namespace BtlCore.Scripting
             return item;
         }
 
-        public static bool TryGetVector(BtlFrontDocument doc, string path, bool create, out BtlVector vec)
+        public bool TryGetVector(BtlFrontDocument doc, string path, bool create, out BtlVector vec)
         {
             var found = FindVector(doc, path, create);
             vec = found?.Vector;
             return vec != null;
         }
 
-        public static BtlVector GetVector(BtlFrontDocument doc, string path, bool create)
+        public BtlVector GetVector(BtlFrontDocument doc, string path, bool create)
         {
             return (FindVector(doc, path, create) ?? throw Missing()).Vector;
         }
 
-        public static BtlVector InsertNode(BtlFrontDocument doc, string path, int index, BtlNode node)
+        public BtlVector InsertNode(BtlFrontDocument doc, string path, int index, BtlNode node)
         {
             if (node == null) throw new FrontEditException("不能插入空元素");
             var found = FindVector(doc, path, create: true) ?? throw Missing();
@@ -143,50 +145,50 @@ namespace BtlCore.Scripting
             return found.Vector;
         }
 
-        public static void SetMember(BtlFrontDocument doc, string path, object value)
+        public void SetMember(BtlFrontDocument doc, string path, object value)
         {
             var steps = Segments(path);
             if (steps.Length < 2) throw new FrontEditException("路径无法定位");
             var parent = new string[steps.Length - 1];
             Array.Copy(steps, parent, parent.Length);
-            var loc = Walk(doc.Root, SoftSchema.RootType, parent, parent.Length, create: true);
+            var loc = Walk(doc.Root, _context.RootType, parent, parent.Length, create: true);
             if (loc?.Node is not BtlStruct st) throw new FrontEditException("路径无法定位");
             SetStructMember(st, loc.TypeName, steps[^1], value);
         }
 
-        public static object GetMember(BtlFrontDocument doc, string path)
+        public object GetMember(BtlFrontDocument doc, string path)
         {
             var steps = Segments(path);
             if (steps.Length < 2) return null;
             var parent = new string[steps.Length - 1];
             Array.Copy(steps, parent, parent.Length);
-            var loc = Walk(doc.Root, SoftSchema.RootType, parent, parent.Length, create: false);
+            var loc = Walk(doc.Root, _context.RootType, parent, parent.Length, create: false);
             if (loc?.Node is not BtlStruct st) return null;
             return ReadStructMember(st, loc.TypeName, steps[^1]);
         }
 
-        public static object ReadStructMember(BtlStruct st, string structName, string segment)
+        public object ReadStructMember(BtlStruct st, string structName, string segment)
         {
             int index = StructMemberIndex(structName, segment);
             if (st == null || index >= st.V.Count) return 0;
             return st.V[index];
         }
 
-        public static void SetStructMember(BtlStruct st, string structName, string segment, object value)
+        public void SetStructMember(BtlStruct st, string structName, string segment, object value)
         {
             if (st == null) throw new FrontEditException("路径无法定位");
             int index = StructMemberIndex(structName, segment);
             string t = index < st.Layout.Count ? st.Layout[index] : null;
             if (t == null)
             {
-                if (!SoftSchema.TryStructMembers(structName, out var members) || index >= members.Length)
+                if (!_context.TryStructMembers(structName, out var members) || index >= members.Length)
                     throw new FrontEditException("路径无法定位");
                 t = members[index].T;
             }
             FrontEdit.SetMember(st, index, value == null ? null : Coerce(t, value));
         }
 
-        public static BtlTable AppendTable(BtlFrontDocument doc, string path)
+        public BtlTable AppendTable(BtlFrontDocument doc, string path)
         {
             var found = FindVector(doc, path, create: true) ?? throw Missing();
             if (found.Hint.VectorElem != "table")
@@ -197,16 +199,16 @@ namespace BtlCore.Scripting
         }
 
         /// <summary>把 Root.stage_metadata.targets 这类旧路径收成 /2/0[index]。</summary>
-        public static string IndexedRow(string legacyPath, int index)
+        public string IndexedRow(string legacyPath, int index)
         {
             var steps = Segments(legacyPath);
-            string type = SoftSchema.RootType;
+            string type = _context.RootType;
             var ids = new int[steps.Length];
             for (int i = 0; i < steps.Length; i++)
             {
                 int id = FieldId(type, steps[i]);
                 ids[i] = id;
-                if (!SoftSchema.TryGet(type, id, out var hint))
+                if (!_context.TryGet(type, id, out var hint))
                     throw new FrontEditException("路径无法定位");
                 type = NextType(hint);
             }
@@ -222,19 +224,19 @@ namespace BtlCore.Scripting
             return text.ToString();
         }
 
-        public static string ElementType(BtlFrontDocument doc, string path)
+        public string ElementType(BtlFrontDocument doc, string path)
         {
             var found = FindVector(doc, path, create: false) ?? throw Missing();
             return found.ElemType;
         }
 
-        public static void Fill(BtlFrontDocument doc, string path, IList<object> values)
+        public void Fill(BtlFrontDocument doc, string path, IList<object> values)
         {
             var found = FindVector(doc, path, create: true) ?? throw Missing();
             Fill(found, values);
         }
 
-        public static void Fill(BtlTable table, string typeName, string path, IList<object> values)
+        public void Fill(BtlTable table, string typeName, string path, IList<object> values)
         {
             if (table == null) throw new FrontEditException("路径无法定位");
             var steps = Segments(path, keepRoot: true);
@@ -244,7 +246,7 @@ namespace BtlCore.Scripting
             Fill(new FoundVec { Vector = vec, Hint = loc.Hint, ElemType = loc.Hint.VectorElemTable ?? "" }, values);
         }
 
-        static void Fill(FoundVec found, IList<object> values)
+        void Fill(FoundVec found, IList<object> values)
         {
             if (found.Hint.VectorElem == "table" || found.Hint.VectorElem == "struct")
                 throw new FrontEditException("路径无法定位");
@@ -257,7 +259,7 @@ namespace BtlCore.Scripting
             FrontEdit.Fill(found.Vector, coerced);
         }
 
-        public static void Remove(BtlFrontDocument doc, string path, int index)
+        public void Remove(BtlFrontDocument doc, string path, int index)
         {
             var found = FindVector(doc, path, create: false) ?? throw Missing();
             FrontEdit.RemoveAt(found.Vector, index);
@@ -277,17 +279,17 @@ namespace BtlCore.Scripting
             public FieldHint Hint;
         }
 
-        static FoundVec FindVector(BtlFrontDocument doc, string path, bool create)
+        FoundVec FindVector(BtlFrontDocument doc, string path, bool create)
         {
             var steps = Segments(path);
-            var loc = Walk(doc.Root, SoftSchema.RootType, steps, steps.Length, create);
+            var loc = Walk(doc.Root, _context.RootType, steps, steps.Length, create);
             if (loc?.Node is not BtlVector vec) return null;
             if (loc.Hint == null || loc.Hint.Kind != FieldKind.Vector)
                 throw new FrontEditException("路径无法定位");
             return new FoundVec { Vector = vec, Hint = loc.Hint, ElemType = loc.Hint.VectorElemTable ?? "" };
         }
 
-        static Loc Walk(BtlNode node, string typeName, string[] steps, int count, bool create)
+        Loc Walk(BtlNode node, string typeName, string[] steps, int count, bool create)
         {
             FieldHint hint = null;
             for (int i = 0; i < count; i++)
@@ -295,7 +297,7 @@ namespace BtlCore.Scripting
                 if (node is not BtlTable tbl)
                     throw new FrontEditException("路径无法定位");
                 int id = FieldId(typeName, steps[i]);
-                if (!SoftSchema.TryGet(typeName, id, out hint))
+                if (!_context.TryGet(typeName, id, out hint))
                     throw new FrontEditException("路径无法定位");
                 tbl.F.TryGetValue(id, out var child);
                 if (child == null)
@@ -310,18 +312,18 @@ namespace BtlCore.Scripting
             return new Loc { Node = node, TypeName = typeName, Hint = hint };
         }
 
-        static BtlNode Create(FieldHint hint)
+        BtlNode Create(FieldHint hint)
         {
             if (hint.Kind == FieldKind.Table)
                 return BtlFrontJson.NewTable();
             if (hint.Kind == FieldKind.Vector)
                 return BtlFrontJson.NewVector(hint.VectorElem ?? "u8");
             if (hint.Kind == FieldKind.Struct)
-                return FrontEdit.StructFromFbs(hint.StructName);
+                return FrontEdit.StructFromFbs(_context, hint.StructName);
             return null;
         }
 
-        static string NextType(FieldHint hint)
+        string NextType(FieldHint hint)
         {
             if (hint.Kind == FieldKind.Table) return hint.ChildTable ?? "";
             if (hint.Kind == FieldKind.Struct) return hint.StructName ?? "";
@@ -329,11 +331,11 @@ namespace BtlCore.Scripting
             return "";
         }
 
-        static object ReadScalar(Loc parent, string segment)
+        object ReadScalar(Loc parent, string segment)
         {
             if (parent?.Node is BtlStruct st)
             {
-                var fields = SoftSchema.Schema?.StructMembers(parent.TypeName);
+                var fields = _context.Schema?.StructMembers(parent.TypeName);
                 if (fields == null) return null;
                 for (int i = 0; i < fields.Count; i++)
                 {
@@ -349,12 +351,12 @@ namespace BtlCore.Scripting
             return true;
         }
 
-        static void WriteScalar(Loc parent, string segment, object value)
+        void WriteScalar(Loc parent, string segment, object value)
         {
             if (parent?.Node is not BtlTable tbl)
                 throw new FrontEditException("路径无法定位");
             int id = FieldId(parent.TypeName, segment);
-            if (!SoftSchema.TryGet(parent.TypeName, id, out var hint))
+            if (!_context.TryGet(parent.TypeName, id, out var hint))
                 throw new FrontEditException("路径无法定位");
             if (value == null)
             {
@@ -371,7 +373,7 @@ namespace BtlCore.Scripting
             FrontEdit.SetScalar(tbl, id, t, Coerce(t, value));
         }
 
-        static int FieldId(string typeName, string segment)
+        int FieldId(string typeName, string segment)
         {
             if (segment.StartsWith('#'))
             {
@@ -379,7 +381,7 @@ namespace BtlCore.Scripting
                     throw new FrontEditException("路径无法定位");
                 return id;
             }
-            var schema = SoftSchema.Schema ?? throw new FrontEditException("没有 battle.fbs");
+            var schema = _context.Schema ?? throw new FrontEditException("没有 battle.fbs");
             if (!schema.TryGetFieldByName(typeName, segment, out var field))
                 throw new FrontEditException("路径无法定位");
             return field.Id;
@@ -451,7 +453,7 @@ namespace BtlCore.Scripting
             }
         }
 
-        static string[] Segments(string path, bool keepRoot = false)
+        string[] Segments(string path, bool keepRoot = false)
         {
             if (string.IsNullOrWhiteSpace(path))
                 throw new FrontEditException("路径无法定位");
@@ -471,7 +473,7 @@ namespace BtlCore.Scripting
             return list;
         }
 
-        static object EmptyElement(FoundVec found)
+        object EmptyElement(FoundVec found)
         {
             string elem = found.Hint.VectorElem;
             if (elem == "table") return BtlFrontJson.NewTable();
@@ -480,18 +482,18 @@ namespace BtlCore.Scripting
                 if (found.Vector.StructLayout.Count > 0)
                     return FrontEdit.NewStruct(found.Vector.StructLayout);
                 string name = found.Hint.StructName ?? found.Hint.VectorElemTable;
-                if (string.IsNullOrEmpty(name) || !SoftSchema.TryStructMembers(name, out _))
+                if (string.IsNullOrEmpty(name) || !_context.TryStructMembers(name, out _))
                     throw new FrontEditException("路径无法定位");
-                return FrontEdit.StructFromFbs(name);
+                return FrontEdit.StructFromFbs(_context, name);
             }
             if (string.IsNullOrEmpty(elem))
                 throw new FrontEditException("路径无法定位");
             return SoftSchema.DefaultValue(elem);
         }
 
-        static int StructMemberIndex(string structName, string segment)
+        int StructMemberIndex(string structName, string segment)
         {
-            var schema = SoftSchema.Schema ?? throw new FrontEditException("路径无法定位");
+            var schema = _context.Schema ?? throw new FrontEditException("路径无法定位");
             if (segment.StartsWith('#'))
             {
                 if (!int.TryParse(segment.AsSpan(1), NumberStyles.Integer, CultureInfo.InvariantCulture, out int id) || id < 0)
@@ -503,6 +505,6 @@ namespace BtlCore.Scripting
             return field.Id;
         }
 
-        static FrontEditException Missing() => new FrontEditException("路径无法定位");
+        FrontEditException Missing() => new FrontEditException("路径无法定位");
     }
 }

@@ -18,11 +18,17 @@ internal static class Program
             var loaded = LayoutLoader.Load(Path.Combine(root, "EditorLayout"), null);
             Check(loaded.Ok, string.Join("\n", loaded.Errors));
             Check(loaded.Bundle.Tabs.All(t => !t.Builtin && t.Page != null), "all pages must be XML");
+            if(args.Contains("--research-only")) { ResearchDetailsChecks.Run(root,loaded.Bundle,args.Contains("--render")); return 0; }
+            if(args.Contains("--independent-details-only")) { IndependentDetailsChecks.Run(root,loaded.Bundle); return 0; }
+            if(args.Contains("--fold-layout-only")) { CollapsibleLayoutChecks.Run(root,loaded.Bundle,args.Contains("--render")); return 0; }
+            if(args.Contains("--selection-perf-only")) { SelectionPerformanceChecks.Run(root,loaded.Bundle,args.Contains("--baseline")); return 0; }
+            if(args.Contains("--canvas-navigation-only")) { CanvasNavigationChecks.Run(root,loaded.Bundle,args.Contains("--baseline"),args.Contains("--render")); return 0; }
 
             Console.WriteLine("Creating XML editor...");
             using var form = new MainEditorForm(true) { ShowInTaskbar = false, Opacity = 0, Location = new Point(-32000, -32000) };
             form.StartPosition = FormStartPosition.Manual;
             form.Show();
+            if(args.Contains("--render"))Render(form,root,"welcome");
             var pages = Field<Dictionary<string, LayoutPageControl>>(form, "_editorPages");
             Check(pages.Count == 6, "six XML editor tabs");
             Check(Descendants(form).OfType<LayoutPageControl>().Count() == 6, "one XML view per tab");
@@ -35,11 +41,22 @@ internal static class Program
             Call(form, "CellSelectedClick", 0);
             var host = Field<ScriptHost>(form, "_stageHost");
             var doc = host.Document;
+            var canvas = Field<EditorMapCanvas>(form, "mapCanvas");
+            var idSwitch = Descendants(form).OfType<CheckBox>().Single(c => c.Name == "show_cell_ids");
+            var coordinateSwitch = Descendants(form).OfType<CheckBox>().Single(c => c.Text == "显示地块坐标");
+            var offsetSwitch = Descendants(form).OfType<CheckBox>().Single(c => c.Text == "显示贴图偏移");
+            Check(idSwitch.Checked && !coordinateSwitch.Checked && !offsetSwitch.Checked
+                && canvas.ShowCellIds && !canvas.ShowCellCoordinates && !canvas.ShowCellOffsets, "toolbar and canvas default to cell IDs only");
+            string beforeOverlays = BtlFrontJson.Serialize(doc);
+            idSwitch.Checked = false; coordinateSwitch.Checked = true; offsetSwitch.Checked = true;
+            Check(!canvas.ShowCellIds && canvas.ShowCellCoordinates && canvas.ShowCellOffsets, "toolbar independently controls three overlays");
+            idSwitch.Checked = true; coordinateSwitch.Checked = false; offsetSwitch.Checked = false;
+            Check(beforeOverlays == BtlFrontJson.Serialize(doc), "overlay switches leave map data unchanged");
             string before = BtlFrontJson.Serialize(doc);
             foreach (var page in pages.Values) page.Reload(doc);
             Check(before == BtlFrontJson.Serialize(doc), "page refresh must not modify document");
             Check(pages["stage"].Controls.Count == 1, "stage contains only generated root");
-            Check(Descendants(pages["faction"]).OfType<Button>().Any(b => b.Text == "保存路线"), "XML route editor");
+            Check(Descendants(pages["faction"]).OfType<Button>().Any(b => b.Text == "保存部队组"), "XML route editor");
             Check(Descendants(pages["terrain"]).OfType<TerrainPalettePanel>().Count() == 4, "four XML palettes");
 
             // 热加载既不能增加第二套控件，也不能改变文档。
@@ -55,9 +72,9 @@ internal static class Program
             Field<TabControl>(form, "tabControlRight").SelectedTab = pages["stage"].Parent as TabPage;
             var fog = Descendants(pages["stage"]).OfType<CheckBox>().Single(c => c.Text == "启用战争迷雾");
             bool oldFog = fog.Checked;
-            int historyBefore = Field<List<BtlFrontDocument>>(form, "_history").Count;
+            int historyBefore = Field<BtldMapEditor.Front.FrontSession>(form, "_front").Editing.HistoryCount;
             fog.Checked = !oldFog;
-            Check(Field<List<BtlFrontDocument>>(form, "_history").Count == historyBefore + 1, "checkbox commits one history frame");
+            Check(Field<BtldMapEditor.Front.FrontSession>(form, "_front").Editing.HistoryCount == historyBefore + 1, "checkbox commits one history frame");
             Call(form, "PerformUndoAction");
             Check(fog.Checked == oldFog, "undo refreshes XML checkbox");
             Call(form, "PerformRedoAction");
@@ -65,21 +82,32 @@ internal static class Program
 
             Console.WriteLine("Testing automatic Lua tools and history...");
             var toolsMenu = Field<ToolStripMenuItem>(form, "_toolsMenu");
-            Check(toolsMenu.DropDownItems.Count == host.Tools.Count && host.Tools.Count == 7, "one automatic menu item per Lua tool");
+            Check(toolsMenu.DropDownItems.Count == 1 && host.Tools.Single().Id == "assign_unit_uids", "only the UID tool ships in the menu");
             var sampleAgents = (BtlVector)((BtlTable)host.Document.Root.F[6]).F[0];
             var sampleInfo = (BtlStruct)((BtlTable)sampleAgents.V[0]).F[0];
-            sampleInfo.V[6] = (ushort)0;
+            sampleInfo.V[2] = (ushort)60000;
             Call(form, "OnDocumentLoaded"); Call(form, "InitHistory");
             Call(form, "CellSelectedClick", Convert.ToInt32(sampleInfo.V[0]));
             string beforeTool = BtlFrontJson.Serialize(host.Document);
-            int toolHistory = Field<List<BtlFrontDocument>>(form, "_history").Count;
-            toolsMenu.DropDownItems.Cast<ToolStripMenuItem>().Single(t => t.Name == "heal_selected").PerformClick();
-            Check(Convert.ToInt32(sampleInfo.V[6]) == Convert.ToInt32(sampleInfo.V[7]), "automatic tool runs from menu");
-            Check(Field<List<BtlFrontDocument>>(form, "_history").Count == toolHistory + 1, "tool adds one undo frame");
+            int toolHistory = Field<BtldMapEditor.Front.FrontSession>(form, "_front").Editing.HistoryCount;
+            var uidItem=toolsMenu.DropDownItems.Cast<ToolStripMenuItem>().Single(t => t.Name == "assign_unit_uids");
+            ClickConfirmedTool(uidItem,host.Tools.Single().Title,false);
+            Check(beforeTool == BtlFrontJson.Serialize(host.Document)
+                && Field<BtldMapEditor.Front.FrontSession>(form, "_front").Editing.HistoryCount == toolHistory,
+                "declining UID confirmation changes neither data nor history");
+            ClickConfirmedTool(uidItem,host.Tools.Single().Title,true);
+            var onmap = sampleAgents.V.Cast<BtlTable>().Select((row, index) => (Info: (BtlStruct)row.F[0], Index: index))
+                .Where(row => Convert.ToInt32(row.Info.V[0]) >= 0 && Convert.ToInt32(row.Info.V[0]) < 588)
+                .OrderBy(row => Convert.ToInt32(row.Info.V[0])).ThenBy(row => row.Index).ToArray();
+            Check(onmap.Select(row => Convert.ToInt32(row.Info.V[2])).SequenceEqual(Enumerable.Range(1, onmap.Length)), "menu assigns consecutive UIDs by cell order");
+            Check(Field<BtldMapEditor.Front.FrontSession>(form, "_front").Editing.HistoryCount == toolHistory + 1, "tool adds one undo frame");
             Call(form, "PerformUndoAction");
             Check(beforeTool == BtlFrontJson.Serialize(host.Document), "tool undo restores whole document");
             Call(form, "PerformRedoAction");
 
+            // 参数对话框的覆盖使用显式加载的示例，示例不再随正式菜单注册。
+            host.Execute(File.ReadAllText(Path.Combine(root, "EditorLayout/examples/常用工具.lua")), "example-tools.lua");
+            Call(form, "RebuildToolsMenu");
             var climateTool = host.Tools.Single(t => t.Id == "cell_climate");
             Dictionary<string, object> toolInput = null;
             using (var inputDialog = new ScriptToolDialog(climateTool, p => p.Choices, input =>
@@ -156,12 +184,12 @@ internal static class Program
             {
                 var info = (BtlStruct)row.F[0];
                 info.V[6] = info.V[7];
-                if (info.Layout.Count == 0) info.Layout.AddRange(Enumerable.Repeat("u16", 10));
+                if (info.Layout.Count == 0 && expectedToolDoc.Context.TryStructMembers("AgentInfo", out var members)) info.Layout.AddRange(members.Select(m => m.T));
             }
             Call(form, "ExecuteTool", "heal_all", new ScriptArgs());
-            Check(BtlFrontJson.Serialize(expectedToolDoc) == BtlFrontJson.Serialize(host.Document),
+            Check(BtlFrontJson.ContentEquals(expectedToolDoc, host.Document),
                 "tool commit preserves original order, overlapping units, and trailing attributes");
-            Check(BtlFrontJson.Serialize(expectedToolDoc) == (string)typeof(MainEditorForm)
+            Check(BtlFrontJson.Serialize(host.Document) == (string)typeof(MainEditorForm)
                 .GetMethod("SnapshotFrontJson", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(form, null),
                 "later canvas sync leaves committed document intact");
 
@@ -169,7 +197,7 @@ internal static class Program
             Console.WriteLine("Testing packed JSON tree controls...");
             var treeDoc = new BtlFrontDocument { Root = BtlFrontJson.NewTable() };
             var bt = new BtlVector { T = "vector", Elem = "u8", Enc = PackedJsonStream.EncName };
-            bt.V.Add(JsonNode.Parse("{\"btid\":1,\"name\":\"test\",\"id\":1,\"class\":\"bt\",\"node\":[{\"class\":\"seq\",\"node\":[{\"class\":\"act\",\"method\":\"Old\"}]}]}"));
+            bt.V.Add(JsonNode.Parse("{\"btid\":1,\"name\":\"test\",\"id\":-1,\"class\":\"bt\",\"node\":[{\"class\":\"seq\",\"node\":[{\"class\":\"act\",\"method\":\"Old\",\"params\":[]},{\"class\":\"wait\",\"id\":1,\"rounds\":2}]}]}"));
             treeDoc.Root.F[10] = bt;
             var treeHost = new ScriptHost();
             foreach (var script in loaded.Bundle.Scripts) treeHost.Execute(script.Text, script.Name);
@@ -184,12 +212,33 @@ internal static class Program
             var list = Descendants(treeView).OfType<ListView>().Single();
             list.Items[0].Selected = true;
             var nodes = Descendants(treeView).OfType<TreeView>().Single();
-            Check(nodes.Nodes.Count == 1 && nodes.Nodes[0].Nodes.Count == 1, "packed JSON renders nested nodes");
+            Check(nodes.Nodes.Count == 1 && nodes.Nodes[0].Nodes.Count == 2, "FlexBuffers renders nested nodes");
             nodes.SelectedNode = nodes.Nodes[0].Nodes[0];
             var methodBox = Descendants(treeView).OfType<TextBox>().Single(t => t.Text == "Old");
             methodBox.Text = "Changed";
             Descendants(treeView).OfType<Button>().Single(b => b.Text == "保存树和节点属性").PerformClick();
             Check(((JsonObject)bt.V[0])["node"][0]["node"][0]["method"].ToString() == "Changed", "XML tree command edits selected nested node");
+            Check(((JsonObject)bt.V[0])["node"][0]["node"][0]["params"] is JsonArray emptyParams && emptyParams.Count == 0,
+                "XML tree save preserves explicit empty params");
+            nodes.SelectedNode = nodes.Nodes[0].Nodes[1];
+            var roundsBox = Descendants(treeView).OfType<TextBox>().Single(t => t.Name == "rounds");
+            Check(roundsBox is NullableNumericUpDown && roundsBox.Text == "2", "wait rounds uses a scalar numeric editor");
+            roundsBox.Text = "4";
+            Descendants(treeView).OfType<Button>().Single(b => b.Text == "保存树和节点属性").PerformClick();
+            Check(((JsonObject)bt.V[0])["node"][0]["node"][1]["rounds"].GetValue<int>() == 4, "wait rounds saves an integer");
+            Check(treeDoc.Editing.Undo(), "wait edit can undo"); treeView.Reload(treeDoc);
+            Check(roundsBox.Text == "2", "undo restores scalar rounds in UI");
+            Check(treeDoc.Editing.Redo(), "wait edit can redo"); treeView.Reload(treeDoc);
+            var rebuiltTree = FrontToBtl.Build(treeDoc); Check(rebuiltTree.Ok, "edited FlexBuffers exports");
+            var reopenedTree = BtlToFront.FromBytes(rebuiltTree.Bytes);
+            Check(((JsonObject)((BtlVector)reopenedTree.Document.Root.F[10]).V[0])["node"][0]["node"][1]["rounds"].GetValue<int>() == 4,
+                "scalar rounds survives BTL save and reopen");
+            var unsupportedTree = new BtlFrontDocument { Root = BtlFrontJson.NewTable() };
+            FrontEdit.EnsureVec(unsupportedTree.Root, 10, "u8").V.AddRange(new object[] { (byte)0, (byte)0, (byte)252, (byte)1 });
+            treeHost.Load(unsupportedTree); treeView.Reload(unsupportedTree);
+            Check(list.Items.Count == 0 && Descendants(treeView).OfType<Button>().Where(b => b.AccessibleName == null).All(b => !b.Enabled),
+                "unsupported raw payload does not become fake tree rows or allow edits");
+            Check(Descendants(treeView).OfType<Label>().Any(l => l.Text.Contains("原始字节保留")), "unsupported tree payload explains preserved bytes");
 
             Console.WriteLine("Testing off-map row mapping and new-map defaults...");
             var unitDoc = new BtlFrontDocument { Root = BtlFrontJson.NewTable() };
@@ -217,7 +266,7 @@ internal static class Program
             Check(outsideList.Items.Count == 1 && (int)outsideList.Items[0].Tag == 1, "filtered rows keep original agent index");
             outsideList.Items[0].Selected = true;
             Console.WriteLine("Editing selected off-map row...");
-            var outsideGroup = Descendants(unitView).OfType<GroupBox>().Single(g => g.Text == "地图外部队 / 增援部队");
+            var outsideGroup = Descendants(unitView).OfType<CollapsibleGroup>().Single(g => g.Title == "地图外部队 / 增援部队");
             Descendants(outsideGroup).OfType<NullableNumericUpDown>().Single(n => n.Name == "hp").NullableValue = 17;
             Descendants(outsideGroup).OfType<Button>().Single(b => b.Text == "保存选中部队").PerformClick();
             Check(Convert.ToInt32(((BtlStruct)((BtlTable)agents.V[1]).F[0]).V[6]) == 17, "off-map edit targets filtered source row");
@@ -250,11 +299,11 @@ internal static class Program
             factionView.ErrorOccurred += ex => throw new InvalidOperationException("route UI", ex);
             treeForm.Controls.Clear(); treeForm.Controls.Add(factionView);
             factionView.Reload(unitDoc);
-            var routeGroup = Descendants(factionView).OfType<GroupBox>().Single(g => g.Text == "路线");
+            var routeGroup = Descendants(factionView).OfType<CollapsibleGroup>().Single(g => g.Title == "部队组");
             Descendants(routeGroup).OfType<ListView>().Single().Items[0].Selected = true;
             Descendants(routeGroup).OfType<NullableNumericUpDown>().Single(n => n.Name == "flag").NullableValue = 3;
             Descendants(routeGroup).OfType<TextBox>().Single(n => n.Name == "cells").Text = "1, 0, 1";
-            Descendants(routeGroup).OfType<Button>().Single(b => b.Text == "保存路线").PerformClick();
+            Descendants(routeGroup).OfType<Button>().Single(b => b.Text == "保存部队组").PerformClick();
             Check(Convert.ToInt32(((BtlScalar)route.F[0]).V) == 3 && ((BtlVector)route.F[1]).V.Count == 3,
                 "route numeric and integer-list values remain typed");
 
@@ -285,12 +334,42 @@ internal static class Program
                 Console.WriteLine("Rendered XML pages: " + output);
             }
 
-            Console.WriteLine("XML UI smoke PASS: mount, sample load, read-only refresh, hot reload, checkbox/tool undo/redo, tool parameter UI, vector preservation, nested tree edit, off-map row mapping, route editors, new-map defaults.");
+            NullableFieldsChecks.Run(root, loaded.Bundle, args.Contains("--render"));
+            MapTransactionChecks.Run(root);
+            FieldCatalogUiChecks.Run(root);
+            ScriptFormatUiChecks.Run(root);
+            ResearchDetailsChecks.Run(root, loaded.Bundle, args.Contains("--render"));
+            IndependentDetailsChecks.Run(root, loaded.Bundle);
+            CollapsibleLayoutChecks.Run(root, loaded.Bundle, args.Contains("--render"));
+            SelectionPerformanceChecks.Run(root, loaded.Bundle);
+            Console.WriteLine("XML UI smoke PASS: mount, sample load, read-only refresh, hot reload, checkbox/tool undo/redo, tool parameter UI, vector preservation, nested tree edit, off-map row mapping, route editors, nullable fields, new-map defaults.");
             return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
     }
 
+    static void ClickConfirmedTool(ToolStripMenuItem item,string title,bool accept)
+    {
+        bool shown=false,defaultNo=false;
+        using var timer=new System.Windows.Forms.Timer{Interval=20};
+        timer.Tick+=(_,_)=>
+        {
+            IntPtr dialog=FindWindow("#32770",title);
+            if(dialog==IntPtr.Zero)return;
+            GetWindowThreadProcessId(dialog,out uint process);
+            if(process!=Environment.ProcessId)return;
+            shown=true;defaultNo=(SendMessage(dialog,0x0400,IntPtr.Zero,IntPtr.Zero).ToInt64()&0xffff)==7;
+            timer.Stop();SendMessage(dialog,0x0111,new IntPtr(accept ? 6 : 7),IntPtr.Zero);
+        };
+        timer.Start();item.PerformClick();timer.Stop();
+        Check(shown && defaultNo,"UID warning is modal and defaults to No");
+    }
+    [System.Runtime.InteropServices.DllImport("user32.dll",CharSet=System.Runtime.InteropServices.CharSet.Unicode)]
+    static extern IntPtr FindWindow(string className,string windowName);
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    static extern uint GetWindowThreadProcessId(IntPtr window,out uint process);
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    static extern IntPtr SendMessage(IntPtr window,int message,IntPtr wparam,IntPtr lparam);
     static void Check(bool ok, string message) { if (!ok) throw new InvalidOperationException(message); }
     static void Render(Form form, string root, string name)
     {
@@ -313,7 +392,7 @@ internal static class Program
     static string FindRoot()
     {
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (Directory.Exists(Path.Combine(dir.FullName, "EditorLayout"))) return dir.FullName;
+            if (File.Exists(Path.Combine(dir.FullName, "schema", "battle.fbs"))) return dir.FullName;
         throw new DirectoryNotFoundException("EditorLayout");
     }
 }
