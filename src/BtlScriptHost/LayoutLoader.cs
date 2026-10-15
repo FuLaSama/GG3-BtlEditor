@@ -22,7 +22,7 @@ namespace BtlCore.Scripting
                     LoadLooseScripts(userDir, result.Bundle, result.Errors, includeScripts: !hasUserLayout);
                 result.Bundle.Fields.ValidateReferences();
                 foreach (var tab in result.Bundle.Tabs)
-                    if (tab.Page != null) result.Bundle.Fields.Bind(tab.Page, context ?? BtlCore.Fb.SoftSchema.DefaultContext);
+                    if (tab.Page != null) result.Bundle.Fields.Bind(tab.Page, context);
             }
             catch (Exception ex)
             {

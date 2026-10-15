@@ -8,7 +8,7 @@ public class MapEditParityTests
 {
     static BtlFrontDocument Sample()
     {
-        var doc = new BtlFrontDocument { Root = BtlFrontJson.NewTable() };
+        var doc = new BtlFrontDocument { Root = BtlFrontJson.NewTable(), Context=EditorScripts.LegacyContext };
         var map = FrontEdit.EnsureTable(doc.Root, 1);
         FrontEdit.SetField(map, 0, FrontEdit.StructFromFbs("Size",
             (ushort)2, (ushort)2, (ushort)2, (ushort)0, (ushort)2, (ushort)2));
@@ -21,9 +21,9 @@ public class MapEditParityTests
         attrs.V.Add(FrontEdit.StructFromFbs("TileAttr", (byte)5, (byte)1, (sbyte)-2, (sbyte)3));
 
         var agents = FrontEdit.EnsureVec(FrontEdit.EnsureTable(doc.Root, 6), 0, "table");
-        agents.V.Add(UnitEdits.Create(0, 0, 1, 10, 0, 0, 8, 8));
-        agents.V.Add(UnitEdits.Create(5, 0, 4, 11, 0, 0, 1, 1));
-        agents.V.Add(UnitEdits.Create(65535, 1, 9, 3, 0, 0, 1, 1));
+        agents.V.Add(UnitEdits.Create(0, 0, 1, 10, 0, 0, 8, 8,doc.Context));
+        agents.V.Add(UnitEdits.Create(5, 0, 4, 11, 0, 0, 1, 1,doc.Context));
+        agents.V.Add(UnitEdits.Create(65535, 1, 9, 3, 0, 0, 1, 1,doc.Context));
 
         var events = FrontEdit.EnsureVec(FrontEdit.EnsureTable(doc.Root, 5), 0, "table");
         events.V.Add(SiteEdits.CreateBuilding(1, 12, 3, 1, 2, -2, 4, null));

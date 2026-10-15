@@ -19,7 +19,7 @@ public class NamedScriptIntegrationTests
         host.Load(doc);
         return host;
     }
-    static BtlFrontDocument Sample() => StageJson.LoadFile(Path.Combine(EditorScripts.Root(), "src/BtldMapEditor/samples/stage10101.json"), SoftSchema.Schema);
+    static BtlFrontDocument Sample() => StageJson.LoadFile(Path.Combine(EditorScripts.Root(), "src/BtldMapEditor/samples/stage10101.json"), context:EditorScripts.LegacyContext);
     static BtlVector Rows(BtlFrontDocument doc, int table, int field) => (BtlVector)((BtlTable)doc.Root.F[table]).F[field];
     static BtlStruct Info(BtlFrontDocument doc, int table, int row) => (BtlStruct)((BtlTable)Rows(doc, table, 0).V[row]).F[0];
     static ScriptArgs Args(int? index = null, int? cell = null, params (string Key, object Value)[] values) =>
@@ -28,7 +28,7 @@ public class NamedScriptIntegrationTests
     {
         var built = FrontToBtl.Build(doc);
         Assert.True(built.Ok, string.Join("\n", built.Issues));
-        var read = BtlToFront.FromBytes(built.Bytes);
+        var read = BtlToFront.FromBytes(built.Bytes,doc.Context);
         Assert.True(read.Ok, string.Join("\n", read.Issues));
         string output = Path.Combine(EditorScripts.Root(), "artifacts", "lua-objects");
         Directory.CreateDirectory(output);

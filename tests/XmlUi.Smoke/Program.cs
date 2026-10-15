@@ -241,7 +241,9 @@ internal static class Program
             Check(Descendants(treeView).OfType<Label>().Any(l => l.Text.Contains("原始字节保留")), "unsupported tree payload explains preserved bytes");
 
             Console.WriteLine("Testing off-map row mapping and new-map defaults...");
-            var unitDoc = new BtlFrontDocument { Root = BtlFrontJson.NewTable() };
+            var unitHost = new ScriptHost();
+            foreach (var script in loaded.Bundle.Scripts) unitHost.Execute(script.Text, script.Name);
+            var unitDoc = new BtlFrontDocument { Root = BtlFrontJson.NewTable(),Context=unitHost.CreateSchemaContext() };
             var unitMap = FrontEdit.EnsureTable(unitDoc.Root, 1);
             FrontEdit.SetField(unitMap, 0, FrontEdit.StructFromFbs("Size", (ushort)2, (ushort)1, (ushort)0, (ushort)0, (ushort)2, (ushort)1));
             var tiles = FrontEdit.EnsureVec(unitMap, 2, "u16");
@@ -250,12 +252,10 @@ internal static class Program
             foreach (ushort cell in new ushort[] { 0, 65535, 1 })
             {
                 var agent = BtlFrontJson.NewTable();
-                FrontEdit.SetField(agent, 0, FrontEdit.StructFromFbs("AgentInfo", cell, (ushort)0, (ushort)(cell == 65535 ? 2 : cell),
+                FrontEdit.SetField(agent, 0, FrontEdit.StructFromFbs(unitDoc.Context,"AgentInfo", unchecked((short)cell), (ushort)0, (ushort)(cell == 65535 ? 2 : cell),
                     (ushort)101, (ushort)256, (ushort)0, (ushort)10, (ushort)20, (ushort)0, (ushort)0));
                 agents.V.Add(agent);
             }
-            var unitHost = new ScriptHost();
-            foreach (var script in loaded.Bundle.Scripts) unitHost.Execute(script.Text, script.Name);
             unitHost.Load(unitDoc);
             LayoutPageControl unitView = null;
             unitView = new LayoutPageControl(loaded.Bundle.Tabs.Single(t => t.Id == "unit").Page, unitHost, () => unitView.Reload(unitDoc));
@@ -274,7 +274,7 @@ internal static class Program
 
             Console.WriteLine("Testing virtual list selection and commits...");
             for (int i = 0; i < 512; i++)
-                agents.V.Add(UnitEdits.Create(65535, 1, (ushort)(100 + i), 101, 1, 0, 10, 20));
+                agents.V.Add(UnitEdits.Create(65535, 1, (ushort)(100 + i), 101, 1, 0, 10, 20,unitDoc.Context));
             unitView.Reload(unitDoc);
             Check(outsideList.VirtualMode && outsideList.VirtualListSize == 513, "large filtered list is virtual");
             Check((int)outsideList.Items[400].Tag == 402, "virtual display index maps to source vector index");

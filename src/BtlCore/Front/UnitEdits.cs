@@ -17,6 +17,12 @@ namespace BtlCore.Front
             var tbl = BtlFrontJson.NewTable();
             context ??= BtlCore.Fb.SoftSchema.DefaultContext;
             object cell=context.TryStructMembers("AgentInfo",out var members) && members[0].T=="i16" ? (object)unchecked((short)cellIdx) : cellIdx;
+            if(members?.Length==12 && members.Skip(4).Take(4).All(m=>m.T=="u8") && members.Skip(8).All(m=>m.T=="u16"))
+            {
+                tbl.F[0]=FrontEdit.StructFromFbs(context,"AgentInfo",cell,faction,agentId,unitId,
+                    (byte)stack,(byte)(stack>>8),(byte)val5,(byte)(val5>>8),hp,maxHp);
+                return tbl;
+            }
             tbl.F[0] = FrontEdit.StructFromFbs(context,"AgentInfo", cell, faction, agentId, unitId, stack, val5, hp, maxHp);
             return tbl;
         }

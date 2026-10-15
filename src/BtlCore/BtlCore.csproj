@@ -10,7 +10,7 @@
   </PropertyGroup>
 
     <ItemGroup>
-      <EmbeddedResource Include="..\..\schema\battle.fbs" LogicalName="battle.fbs" Condition="Exists('..\..\schema\battle.fbs')" />
+      <None Include="..\..\schema\battle.fbs" Link="battle.fbs" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Condition="Exists('..\..\schema\battle.fbs')" />
     </ItemGroup>
 
 </Project>

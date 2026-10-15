@@ -8,9 +8,9 @@ public class FieldCatalogTests
 {
     static (BtlFrontDocument Doc, BtlTable Unit) Sample()
     {
-        var doc = new BtlFrontDocument { Root = BtlFrontJson.NewTable() };
+        var doc = new BtlFrontDocument { Root = BtlFrontJson.NewTable(), Context=EditorScripts.LegacyContext };
         var units = FrontEdit.EnsureVec(FrontEdit.EnsureTable(doc.Root, 6), 0, "table");
-        var unit = UnitEdits.Create(0, 0, 1, 101, 0xA5, 0, 10, 30);
+        var unit = UnitEdits.Create(0, 0, 1, 101, 0xA5, 0, 10, 30,doc.Context);
         FrontEdit.SetScalar(unit, 98, "u16", (ushort)1234);
         units.V.Add(unit);
         return (doc, unit);

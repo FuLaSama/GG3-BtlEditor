@@ -2,7 +2,7 @@
 
 BTL（FlatBuffers）↔ BtlFront。从零实现；旧管线若恢复，会放在仓库根的 `BtlCore.old`。
 
-正式 schema 在 [`../../schema/battle.fbs`](../../schema/battle.fbs)。
+构建输入在 [`../../schema/battle.fbs`](../../schema/battle.fbs)，编译/发布时复制为程序同目录的 `battle.fbs`。运行时默认只读取 `AppContext.BaseDirectory/battle.fbs`，不搜索工作区、当前目录或上级目录，也不内嵌 FBS；缺失时报告该绝对路径。替换文件后重启程序生效。显式传入 `SchemaContext` 的 API 仍使用调用者指定的解释。
 
 ## 文档自己的格式解释与编辑会话
 

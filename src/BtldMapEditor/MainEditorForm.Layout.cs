@@ -20,7 +20,7 @@ namespace BtldMapEditor
         void InstallEditorLayout()
         {
             EndMapGesture();
-            var result = LayoutLoader.Load(FindLayoutDir("EditorLayout"), FindLayoutDir("EditorLayout.user"), Doc?.Context);
+            var result = LayoutLoader.Load(FindLayoutDir("EditorLayout"), FindLayoutDir("EditorLayout.user"));
             if (!result.Ok) { ShowLayoutErrors(result.Errors); return; }
             var host = new ScriptHost();
             var pages = new Dictionary<string, LayoutPageControl>(StringComparer.Ordinal);
@@ -34,7 +34,9 @@ namespace BtldMapEditor
                     try { host.Execute(script.Text, script.Name); }
                     catch (Exception ex) { throw new InvalidDataException(script.Path + "：" + ex.GetBaseException().Message, ex); }
                 }
-                host.CreateSchemaContext(Doc?.Context); // 全部声明完成后验证，失败保留旧布局和解释。
+                var context=host.CreateSchemaContext(Doc?.Context); // 全部声明完成后再校验字段，失败保留旧布局和解释。
+                foreach(var tab in result.Bundle.Tabs)
+                    if(tab.Page!=null)host.Fields.Bind(tab.Page,Doc?.Context??context);
                 if (HasDoc) host.Load(Doc);
                 foreach (var tab in result.Bundle.Tabs)
                 {

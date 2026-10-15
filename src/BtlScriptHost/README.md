@@ -51,6 +51,8 @@ using (host.BeginRead())
 
 布局根通过 `<fields src="fields/unit.json"/>` 等声明加载目录，用户覆盖以 ID 替换整项定义。C# 调用者在加载源码前调用 `host.ConfigureFields(bundle.Fields)`，再加载脚本和文档；默认目录从相同 JSON 嵌入构建。热加载使用新宿主，全部准备成功后才替换。
 
+不传上下文的 `LayoutLoader.Load` 只展开目录路径、检查声明与父级引用，不提前用默认 FBS 校验位段。加载全部 Lua 后调用 `host.CreateSchemaContext()`，再以该上下文调用 `bundle.Fields.Bind(page, context)` 校验页面；有已打开文档时使用它的固定上下文。显式传入上下文的 `LayoutLoader.Load(..., context)` 仍立即校验。这样新版 FBS 中拆分的字节成员可以先经过 Lua 的等宽兼容定义，避免在兼容定义加载前报 `unit.stack` 越界；并不会跳过最终的物理类型或位段校验。
+
 `version` 表示目录格式，`revision`、`confidence`、`evidence` 记录研究版本、确定程度和依据。有效目录有规范 JSON 和指纹；`ChangedFields(previous)` 追踪字段及父级变化。参与成功编辑的目录和字段 ID 写入工作文档来源记录，随历史恢复；读取、无变化和失败不留新记录。这不是完整的操作审计，也不会自动迁移旧数据。
 
 配置格式、覆盖示例、可选值规则及版本比对见 [公共字段目录说明](../../EditorLayout/fields/README.md)。`FieldCatalogTests` 和 `FieldEvolutionTests` 覆盖字段与整组覆盖、位段保留、来源保存和嵌套回滚；UI 自检的 `FieldCatalogUiChecks` 使用真实控件验证将领组移位、零/false/缺失及建筑成员映射。

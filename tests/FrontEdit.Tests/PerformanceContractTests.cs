@@ -49,9 +49,9 @@ public class PerformanceContractTests
     [Fact]
     public void Vector_lookup_refreshes_after_move_and_remove_append_of_same_size()
     {
-        var doc = new BtlFrontDocument { Root = BtlFrontJson.NewTable() };
+        var doc = new BtlFrontDocument { Root = BtlFrontJson.NewTable(), Context=EditorScripts.LegacyContext };
         var units = FrontEdit.EnsureVec(FrontEdit.EnsureTable(doc.Root, 6), 0, "table");
-        for (int i = 0; i < 3; i++) units.V.Add(UnitEdits.Create((ushort)i, 1, (ushort)i, 101, 1, 0, 10, 20));
+        for (int i = 0; i < 3; i++) units.V.Add(UnitEdits.Create((ushort)i, 1, (ushort)i, 101, 1, 0, 10, 20,doc.Context));
         var host = new ScriptHost(); EditorScripts.Load(host); host.Load(doc);
         host.Execute("""
             editor.action("lookup", function()

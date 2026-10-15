@@ -8,8 +8,8 @@ public class FieldEvolutionTests
 {
     static (BtlFrontDocument Doc, BtlTable Unit, ScriptHost Host) Sample(FieldCatalog catalog = null, SchemaContext context = null)
     {
-        var doc = new BtlFrontDocument { Context = context ?? SoftSchema.DefaultContext, Root = BtlFrontJson.NewTable() };
-        var unit = UnitEdits.Create(0, 0, 1, 101, 1, 0, 10, 30);
+        var doc = new BtlFrontDocument { Context = context ?? EditorScripts.LegacyContext, Root = BtlFrontJson.NewTable() };
+        var unit = UnitEdits.Create(0, 0, 1, 101, 1, 0, 10, 30,doc.Context);
         FrontEdit.EnsureVec(FrontEdit.EnsureTable(doc.Root, 6), 0, "table").V.Add(unit);
         var host = new ScriptHost(); host.ConfigureFields(catalog ?? FieldCatalog.Builtin); host.Load(doc); EditorScripts.Load(host);
         return (doc, unit, host);
@@ -18,7 +18,7 @@ public class FieldEvolutionTests
     [Fact]
     public void Optional_group_override_moves_presence_and_all_children_in_xml_and_lua()
     {
-        var context = new SchemaContext(FbsSchema.LoadFromText(File.ReadAllText(Path.Combine(EditorScripts.Root(), "schema/battle.fbs"))
+        var context = new SchemaContext(FbsSchema.LoadFromText(File.ReadAllText(EditorScripts.LegacySchemaPath)
             .Replace("extra_table_12:AIAgentTable12", "extra_table_12:AIAgentTable11")));
         var catalog = FieldCatalog.Builtin.Overlay(FieldCatalog.Parse("""
             {"version":1,"revision":"experiment.general.2","fields":[
@@ -98,7 +98,7 @@ public class FieldEvolutionTests
         Assert.Equal(used.Sha256, FieldCatalog.Parse(used.DefinitionJson).Fingerprint);
         string edited = BtlFrontJson.Serialize(doc);
         host.Run("change", new()); Assert.Equal(edited, BtlFrontJson.Serialize(doc));
-        Assert.Equal(edited, BtlFrontJson.Serialize(BtlFrontJson.Parse(edited)));
+        Assert.Equal(edited, BtlFrontJson.Serialize(BtlFrontJson.Parse(edited,doc.Context)));
         Assert.Equal(edited, BtlFrontJson.Serialize(BtlFrontJson.CloneDocument(doc)));
         doc.Editing.Undo(); Assert.Equal(initial, BtlFrontJson.Serialize(doc));
         doc.Editing.Redo(); Assert.Equal(edited, BtlFrontJson.Serialize(doc));

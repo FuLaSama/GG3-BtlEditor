@@ -11,7 +11,7 @@ public class StructLayoutTests
     {
         var values = new object[10];
         for (int i = 0; i < 10; i++) values[i] = (ushort)(i + 1);
-        if (fromFbs) return FrontEdit.StructFromFbs("AgentInfo", values);
+        if (fromFbs) return FrontEdit.StructFromFbs(EditorScripts.LegacyContext,"AgentInfo", values);
         var types = new string[10];
         for (int i = 0; i < 10; i++) types[i] = "u16";
         var st = FrontEdit.NewStruct(types);
@@ -21,7 +21,7 @@ public class StructLayoutTests
 
     static BtlFrontDocument Hang(BtlStruct info)
     {
-        var doc = new BtlFrontDocument { Root = BtlFrontJson.NewTable() };
+        var doc = new BtlFrontDocument { Root = BtlFrontJson.NewTable(), Context=EditorScripts.LegacyContext };
         FrontEdit.SetScalar(doc.Root, 0, "u16", (ushort)1);
         var agents = FrontEdit.EnsureVec(FrontEdit.EnsureTable(doc.Root, 6), 0, "table");
         var agent = BtlFrontJson.NewTable();
@@ -34,7 +34,7 @@ public class StructLayoutTests
     {
         var built = FrontToBtl.Build(doc);
         Assert.True(built.Ok, string.Join("\n", built.Issues));
-        var loaded = BtlToFront.FromBytes(built.Bytes);
+        var loaded = BtlToFront.FromBytes(built.Bytes,doc.Context);
         Assert.True(loaded.Ok);
         var ai = (BtlTable)loaded.Document.Root.F[6];
         var agents = (BtlVector)ai.F[0];

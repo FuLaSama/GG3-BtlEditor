@@ -8,7 +8,7 @@ public class UnitEditParityTests
 {
     static BtlFrontDocument Sample()
     {
-        var doc = new BtlFrontDocument { Root = BtlFrontJson.NewTable() };
+        var doc = new BtlFrontDocument { Root = BtlFrontJson.NewTable(), Context=EditorScripts.LegacyContext };
         var map = FrontEdit.EnsureTable(doc.Root, 1);
         FrontEdit.SetField(map, 0, FrontEdit.StructFromFbs("Size",
             (ushort)2, (ushort)2, (ushort)0, (ushort)0, (ushort)2, (ushort)2));
@@ -18,9 +18,9 @@ public class UnitEditParityTests
 
         var ai = FrontEdit.EnsureTable(doc.Root, 6);
         var agents = FrontEdit.EnsureVec(ai, 0, "table");
-        agents.V.Add(UnitEdits.Create(0, 0, 1, 10, 0, 0, 10, 10));
+        agents.V.Add(UnitEdits.Create(0, 0, 1, 10, 0, 0, 10, 10,doc.Context));
 
-        var armed = UnitEdits.Create(1, 0, 2, 8, 0, 0, 20, 20);
+        var armed = UnitEdits.Create(1, 0, 2, 8, 0, 0, 20, 20,doc.Context);
         var beh = FrontEdit.EnsureTable(armed, 3);
         FrontEdit.SetScalar(beh, 1, "u16", (ushort)4);
         var gen = FrontEdit.EnsureTable(armed, 11);
@@ -32,7 +32,7 @@ public class UnitEditParityTests
         FrontEdit.SetScalar(ex, 1, "u8", (byte)1);
         agents.V.Add(armed);
 
-        agents.V.Add(UnitEdits.Create(65535, 1, 9, 3, 0, 0, 1, 1));
+        agents.V.Add(UnitEdits.Create(65535, 1, 9, 3, 0, 0, 1, 1,doc.Context));
         return doc;
     }
 

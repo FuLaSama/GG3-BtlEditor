@@ -23,7 +23,11 @@ internal static class Program
             GameSettings.LoadAllSettings();
             string path=args.FirstOrDefault(a=>a.EndsWith(".btl",StringComparison.OrdinalIgnoreCase))
                 ?? Path.Combine(root,"战役相关文件/BTL/分析用原版样本/conquest1.btl");
-            var session=Measure("read_btl",()=>FrontSession.FromBtl(path));
+            var schemaLayout=LayoutLoader.Load(Path.Combine(root,"EditorLayout"),null);
+            if(!schemaLayout.Ok)throw new InvalidDataException(string.Join(";",schemaLayout.Errors));
+            var schemaHost=new ScriptHost();foreach(var script in schemaLayout.Bundle.Scripts)schemaHost.Execute(script.Text,script.Name);
+            var context=schemaHost.CreateSchemaContext();
+            var session=Measure("read_btl",()=>FrontSession.FromBtl(path,context));
             var doc=session.Document;
             Results["file"]=Path.GetFileName(path);
             Results["width"]=FrontNav.MapWidth(doc); Results["height"]=FrontNav.MapHeight(doc);

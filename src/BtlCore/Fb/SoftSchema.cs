@@ -5,10 +5,9 @@
  * 这些知识来自 battle.fbs，本文件只做翻译：FbsField → FieldHint。
  *
  * 不要在这里再抄一份表结构（以前那种 AgentInfoMembers、Root[0]=u16 已删除）。
- * 找不到 fbs 时 TryGet 返回 false，BtlToFront 会改用启发式猜指针。
+ * 默认 FBS 缺失时明确报错，不自动搜索其他目录或读取内嵌资源。
  *
- * 加载顺序：工作区 schema/battle.fbs 或 exe 旁 battle.fbs →
- * 再退回嵌入 BtlCore.dll 的同名资源。可用 SetSchema 在测试里强制指定。
+ * 仅从运行程序同目录加载 battle.fbs。可用 SetSchema 在测试里强制指定。
  *
  * Front 标量名用 u8/u16，fbs 里是 ubyte/ushort，ToFrontScalar 做对照。
  */
@@ -73,7 +72,7 @@ namespace BtlCore.Fb
         static SchemaContext _default;
         public static SchemaContext DefaultContext
         {
-            get { lock (Gate) return _default ??= new SchemaContext(TryLoad()); }
+            get { lock (Gate) return _default ??= new SchemaContext(LoadDefault()); }
         }
         public static FbsSchema Schema => DefaultContext.Schema;
         public static string RootType => DefaultContext.RootType;
@@ -103,33 +102,12 @@ namespace BtlCore.Fb
             _ => 0
         };
 
-        /// <summary>先找磁盘上的 battle.fbs，再找嵌入资源。都没有就返回 null。</summary>
-        static FbsSchema TryLoad()
+        /// <summary>只读取程序旁的 battle.fbs，缺失时报告该绝对路径。</summary>
+        static FbsSchema LoadDefault()
         {
-            string path = FbsSchema.FindNearby();
-            if (!string.IsNullOrEmpty(path) && File.Exists(path))
-                return FbsSchema.LoadFile(path);
-
-            var asm = typeof(SoftSchema).Assembly;
-            using var stream = asm.GetManifestResourceStream("battle.fbs")
-                               ?? asm.GetManifestResourceStream("BtlCore.battle.fbs");
-            if (stream == null)
-            {
-                foreach (string name in asm.GetManifestResourceNames())
-                {
-                    if (name.EndsWith("battle.fbs", StringComparison.OrdinalIgnoreCase))
-                    {
-                        using var s2 = asm.GetManifestResourceStream(name);
-                        if (s2 == null) break;
-                        using var r2 = new StreamReader(s2);
-                        return FbsSchema.LoadFromText(r2.ReadToEnd(), "embedded:" + name);
-                    }
-                }
-                return null;
-            }
-
-            using var reader = new StreamReader(stream);
-            return FbsSchema.LoadFromText(reader.ReadToEnd(), "embedded:battle.fbs");
+            string path = FbsSchema.ProgramSchemaPath;
+            if(!File.Exists(path))throw new FileNotFoundException("找不到程序旁的格式定义："+path+"。请将 battle.fbs 放在程序同目录。",path);
+            return FbsSchema.LoadFile(path);
         }
 
         /// <summary>battle.fbs 的 ushort/ubyte 等 → Front 的 u16/u8。</summary>

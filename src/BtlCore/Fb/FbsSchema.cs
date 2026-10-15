@@ -68,7 +68,7 @@ namespace BtlCore.Fb
             return s;
         }
 
-        /// <summary>从字符串解析（嵌入资源、单元测试）。include 在没有目录时会被忽略。</summary>
+        /// <summary>从字符串解析（研究覆盖、单元测试）。include 在没有目录时会被忽略。</summary>
         public static FbsSchema LoadFromText(string content, string sourceName = "battle.fbs")
         {
             var s = new FbsSchema { SourcePath = sourceName ?? "battle.fbs" };
@@ -138,46 +138,8 @@ namespace BtlCore.Fb
             return result;
         }
 
-        /// <summary>从当前目录 / 程序目录向上找 schema/battle.fbs，再退回历史路径或旁边的 battle.fbs。</summary>
-        public static string FindNearby(params string[] extraStarts)
-        {
-            var starts = new List<string>();
-            if (extraStarts != null)
-                starts.AddRange(extraStarts.Where(p => !string.IsNullOrEmpty(p)));
-            starts.Add(Directory.GetCurrentDirectory());
-            starts.Add(AppContext.BaseDirectory);
-            foreach (var start in starts)
-            {
-                DirectoryInfo dir;
-                try { dir = new DirectoryInfo(start); }
-                catch { continue; }
-                string schemaHit = WalkFor(dir, d => Path.Combine(d, "schema", "battle.fbs"));
-                if (schemaHit != null) return schemaHit;
-                string legacyHit = WalkFor(dir, d =>
-                {
-                    string tools = Path.Combine(d, "tools", "TestConsole", "battle.fbs");
-                    if (File.Exists(tools)) return tools;
-                    string old = Path.Combine(d, "TestConsole", "battle.fbs");
-                    if (File.Exists(old)) return old;
-                    string local = Path.Combine(d, "battle.fbs");
-                    return File.Exists(local) ? local : null;
-                });
-                if (legacyHit != null) return legacyHit;
-            }
-            return null;
-        }
-
-        static string WalkFor(DirectoryInfo dir, Func<string, string> pick)
-        {
-            while (dir != null)
-            {
-                string hit = pick(dir.FullName);
-                if (!string.IsNullOrEmpty(hit) && File.Exists(hit))
-                    return Path.GetFullPath(hit);
-                dir = dir.Parent;
-            }
-            return null;
-        }
+        /// <summary>默认格式文件只取运行程序同目录，不搜索工作区、当前目录或上级目录。</summary>
+        public static string ProgramSchemaPath => Path.Combine(AppContext.BaseDirectory,"battle.fbs");
 
         /// <summary>
         /// 在目录内找 .fbs：优先 battle.fbs，否则第一份 *.fbs。

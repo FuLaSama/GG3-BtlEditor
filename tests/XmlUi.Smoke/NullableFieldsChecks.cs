@@ -33,13 +33,13 @@ internal static class NullableFieldsChecks
     static BtlBinaryInspection Written(BtlFrontDocument doc)
     {
         var built = FrontToBtl.Build(doc); Check(built.Ok, "edited document builds");
-        return new BtlBinaryInspection(built.Bytes, SoftSchema.Schema);
+        return new BtlBinaryInspection(built.Bytes, doc.Context.Schema);
     }
 
     public static void Run(string root, LayoutBundle layout, bool render)
     {
         var host = new ScriptHost(); foreach (var script in layout.Scripts) host.Execute(script.Text, script.Name);
-        var doc = new BtlFrontDocument { Root = BtlFrontJson.NewTable() };
+        var doc = new BtlFrontDocument { Root = BtlFrontJson.NewTable(), Context=host.CreateSchemaContext() };
         var map = FrontEdit.EnsureTable(doc.Root, 1);
         FrontEdit.SetField(map, 0, FrontEdit.StructFromFbs("Size", (ushort)4, (ushort)1, (ushort)0, (ushort)0, (ushort)4, (ushort)1));
         var tiles = FrontEdit.EnsureVec(map, 2, "u16"); for (int i = 0; i < 4; i++) tiles.V.Add((ushort)0);
@@ -49,7 +49,7 @@ internal static class NullableFieldsChecks
         var routes = FrontEdit.EnsureVec(ai, 1, "table");
         for (int i = 0; i < 3; i++)
         {
-            var unit = UnitEdits.Create((ushort)i, 0, (ushort)(i + 1), 101, 1, 0, 0, 20);
+            var unit = UnitEdits.Create((ushort)i, 0, (ushort)(i + 1), 101, 1, 0, 0, 20,doc.Context);
             if (i > 0) FrontEdit.SetScalar(unit, 2, "u8", (byte)(i == 1 ? 0 : 7));
             var general = FrontEdit.EnsureTable(unit, 11);
             if (i > 0) FrontEdit.SetScalar(general, 1, "bool", i == 2);

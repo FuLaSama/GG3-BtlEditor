@@ -1,9 +1,14 @@
 using BtlCore.Scripting;
+using BtlCore.Fb;
 
 namespace BtlCore.Front.Tests;
 
 static class EditorScripts
 {
+    // 旧版回归样例按原解释测试，不再隐式借用可随研究更新的程序默认 FBS。
+    public static string LegacySchemaPath => Path.Combine(Root(),"tests/FrontEdit.Tests/Fixtures/battle-legacy.fbs");
+    static readonly Lazy<SchemaContext> Legacy = new(()=>new SchemaContext(FbsSchema.LoadFile(LegacySchemaPath)));
+    public static SchemaContext LegacyContext => Legacy.Value;
     public static string Root()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

@@ -7,7 +7,7 @@ namespace BtlCore.Front.Tests;
 public class OptionalFieldWriteTests
 {
     static Dictionary<string, object> Input(params (string Key, object Value)[] pairs) => pairs.ToDictionary(p => p.Key, p => p.Value);
-    static BtlFrontDocument Blank() => new() { Root = BtlFrontJson.NewTable() };
+    static BtlFrontDocument Blank() => new() { Root = BtlFrontJson.NewTable(), Context=EditorScripts.LegacyContext };
     static ScriptHost Host(BtlFrontDocument doc, params string[] scripts)
     {
         var host = new ScriptHost(); host.Load(doc); EditorScripts.Load(host, scripts); return host;
@@ -16,7 +16,7 @@ public class OptionalFieldWriteTests
     {
         var built = FrontToBtl.Build(doc);
         Assert.True(built.Ok, string.Join("\n", built.Issues));
-        return new BtlBinaryInspection(built.Bytes, SoftSchema.Schema);
+        return new BtlBinaryInspection(built.Bytes, doc.Context.Schema);
     }
 
     [Fact]
@@ -69,7 +69,7 @@ public class OptionalFieldWriteTests
     public void General_and_special_empty_fields_do_not_acquire_default_slots()
     {
         var doc = Blank(); var agents = FrontEdit.EnsureVec(FrontEdit.EnsureTable(doc.Root, 6), 0, "table");
-        var unit = UnitEdits.Create(0, 0, 1, 101, 1, 0, 10, 20); agents.V.Add(unit);
+        var unit = UnitEdits.Create(0, 0, 1, 101, 1, 0, 10, 20,doc.Context); agents.V.Add(unit);
         var general = FrontEdit.EnsureTable(unit, 11); FrontEdit.SetScalar(general, 2, "u8", (byte)9);
         var special = FrontEdit.EnsureTable(unit, 10); FrontEdit.SetScalar(special, 1, "u8", (byte)8);
         var host = Host(doc, "unit/配置表单.lua", "unit/基础部队信息.lua");

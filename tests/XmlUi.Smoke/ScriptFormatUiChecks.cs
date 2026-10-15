@@ -36,7 +36,7 @@ internal static class ScriptFormatUiChecks
             while (!opening.IsCompleted) { Application.DoEvents(); Thread.Sleep(1); }
             opening.GetAwaiter().GetResult();
             var session = Field<FrontSession>(form, "_front");
-            Check(session?.CanExport == true, "async open applies Lua schema before parsing");
+            Check(session?.CanExport == true, "async open applies Lua schema before parsing: "+string.Join(";",session?.Issues.Select(i=>i.Path+":"+i.Message)??Array.Empty<string>()));
             var before = session.ToJson();
             Call(form, "RebuildToolsMenu");
             var menu = Field<ToolStripMenuItem>(form, "_toolsMenu");

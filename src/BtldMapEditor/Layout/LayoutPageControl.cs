@@ -33,7 +33,7 @@ namespace BtldMapEditor
         {
             _page = page;
             _host = host;
-            BindFields(host.Document?.Context ?? BtlCore.Fb.SoftSchema.DefaultContext);
+            BindFields(host.Document?.Context ?? host.CreateSchemaContext());
             _committed = committed;
             _nativeCommand = nativeCommand;
             _inputErrors.ContainerControl = this;

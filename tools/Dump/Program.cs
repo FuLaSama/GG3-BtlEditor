@@ -97,7 +97,7 @@ static string ResolveFbs(string given)
 {
     if (!string.IsNullOrEmpty(given) && File.Exists(given))
         return Path.GetFullPath(given);
-    return FbsSchema.FindNearby();
+    return File.Exists(FbsSchema.ProgramSchemaPath) ? FbsSchema.ProgramSchemaPath : null;
 }
 
 static void PrintSummary(JsonObject root)

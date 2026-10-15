@@ -233,9 +233,16 @@ public sealed class FieldCatalog
     public void Bind(LayoutPage page, SchemaContext context)
     {
         foreach (var column in page.Sections.SelectMany(s => s.Columns).Where(c => !string.IsNullOrEmpty(c.FieldKey)))
-            column.Bind = Resolve(column.FieldKey, context).Path;
+            column.Bind = context==null ? EffectivePath(column.FieldKey) : Resolve(column.FieldKey, context).Path;
         foreach (var field in page.Sections.SelectMany(s => s.Fields).Where(f => !string.IsNullOrEmpty(f.FieldKey)))
         {
+            // XML 加载阶段只展开目录路径；物理类型及位段校验等 Lua schema 覆盖注册完再做。
+            if(context==null)
+            {
+                var definition=_fields[field.FieldKey];
+                field.Bind=EffectivePath(field.FieldKey);field.Shift=definition.Shift;field.Width=definition.Width;
+                continue;
+            }
             var resolved = Resolve(field.FieldKey, context);
             field.Bind = resolved.Path;
             field.Type = resolved.DisplayType;

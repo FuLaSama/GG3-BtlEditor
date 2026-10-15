@@ -83,8 +83,7 @@ namespace BtldMapEditor.Front
         public static FrontSession NewMap(ushort w, ushort h, ushort lm, ushort tm, ushort pw, ushort ph,
             ushort roundLimit, ushort version, SchemaContext context = null)
         {
-            var doc = FrontNav.NewMap(w, h, lm, tm, pw, ph, roundLimit, version);
-            return FromDocument(context == null ? doc : new BtlFrontDocument { Context = context, Root = doc.Root });
+            return FromDocument(FrontNav.NewMap(w, h, lm, tm, pw, ph, roundLimit, version,context));
         }
 
         public string ToJson() => BtlFrontJson.Serialize(Document);

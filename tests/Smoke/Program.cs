@@ -1,7 +1,7 @@
 /*
  * Smoke：BtlCore 自检。失败以非 0 退出。
  *
- * 1. 确认 battle.fbs 能加载，Root/1 是 MapTerrain，AgentInfo 10 个成员
+ * 1. 确认程序旁的 battle.fbs 能加载，Root/1 是 MapTerrain，AgentInfo 20 字节
  * 2. 合成最小 BTL → 读 → 写 → 再读
  * 3. 国家行为树 PackedJsonStream 编解码，并塞进 Root/10 做 BTL 回环
  * 4. 可选：--roundtrip 目录、--dump-one 单文件
@@ -14,15 +14,21 @@ using System.Text.Json.Nodes;
 using BtlCore.Fb;
 using BtlCore.Front;
 
+if(args.Contains("--schema-source"))
+{
+    try {Console.WriteLine(SoftSchema.Schema.SourcePath);return 0;}
+    catch(FileNotFoundException ex) {Console.Error.WriteLine(ex.Message);return 22;}
+}
+
 if (!SoftSchema.TryGet("Root", 1, out var mapHint) || mapHint.Kind != FieldKind.Table
     || mapHint.ChildTable != "MapTerrain")
 {
     Console.Error.WriteLine("FAIL: battle.fbs 未加载，Root/1 不是 MapTerrain");
     return 20;
 }
-if (!SoftSchema.TryStructMembers("AgentInfo", out var agentMembers) || agentMembers.Length != 10)
+if (!SoftSchema.TryStructMembers("AgentInfo", out var agentMembers) || agentMembers.Sum(m=>m.Size) != 20)
 {
-    Console.Error.WriteLine("FAIL: AgentInfo 布局不是 fbs 里的 10 个成员");
+    Console.Error.WriteLine("FAIL: AgentInfo 布局不是预期的 20 字节");
     return 21;
 }
 Console.WriteLine("schema " + (SoftSchema.Schema?.SourcePath ?? "?"));

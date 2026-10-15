@@ -265,14 +265,15 @@ namespace BtldMapEditor.Front
         /// 不写 Root/10（行为树）；区域名默认 NewMap。version 为 0 则省略 version 槽。
         /// </summary>
         public static BtlFrontDocument NewMap(ushort w, ushort h, ushort lm, ushort tm, ushort pw, ushort ph,
-            ushort roundLimit, ushort version)
+            ushort roundLimit, ushort version, SchemaContext context = null)
         {
+            context ??= SoftSchema.DefaultContext;
             int n = w * h;
             var tiles = BtlFrontJson.NewVector("u16");
             for (int i = 0; i < n; i++) tiles.V.Add((ushort)0);
 
             var map = BtlFrontJson.NewTable();
-            map.F[0] = StructFromFbs("Size", w, h, lm, tm, pw, ph);
+            map.F[0] = FrontEdit.StructFromFbs(context,"Size", w, h, lm, tm, pw, ph);
             map.F[1] = BtlFrontJson.Scalar("u8", (byte)1);
             map.F[2] = tiles;
             map.F[3] = BtlFrontJson.NewVector("struct");
@@ -286,8 +287,6 @@ namespace BtldMapEditor.Front
 
             var faction = BtlFrontJson.NewTable();
             faction.F[0] = BtlFrontJson.NewVector("table");
-            faction.F[1] = BtlFrontJson.NewVector("table");
-            faction.F[3] = BtlFrontJson.NewVector("table");
 
             var trigger = BtlFrontJson.NewTable();
             trigger.F[0] = BtlFrontJson.NewVector("table");
@@ -326,7 +325,7 @@ namespace BtldMapEditor.Front
             root.F[9] = weather;
             root.F[11] = view;
 
-            return new BtlFrontDocument { FormatVersion = 1, Root = root };
+            return new BtlFrontDocument { FormatVersion = 1, Root = root, Context=context };
         }
 
         /// <summary>

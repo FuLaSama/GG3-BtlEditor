@@ -9,7 +9,7 @@ public class GameToolsTests
 {
     static BtlFrontDocument Sample()
     {
-        var doc = new BtlFrontDocument { Root = BtlFrontJson.NewTable() };
+        var doc = new BtlFrontDocument { Root = BtlFrontJson.NewTable(), Context=EditorScripts.LegacyContext };
         var map = FrontEdit.EnsureTable(doc.Root, 1);
         FrontEdit.SetField(map, 0, FrontEdit.StructFromFbs("Size", (ushort)3, (ushort)1, (ushort)0, (ushort)0, (ushort)3, (ushort)1));
         var tiles = FrontEdit.EnsureVec(map, 2, "u16");
@@ -23,7 +23,7 @@ public class GameToolsTests
         for (int i = 0; i < 3; i++)
         {
             var unit = BtlFrontJson.NewTable();
-            FrontEdit.SetField(unit, 0, FrontEdit.StructFromFbs("AgentInfo", (ushort)(i == 2 ? 65535 : i),
+            FrontEdit.SetField(unit, 0, FrontEdit.StructFromFbs(doc.Context,"AgentInfo", (ushort)(i == 2 ? 65535 : i),
                 (ushort)(i == 1 ? 7 : 3), (ushort)(100 + i), (ushort)101,
                 (ushort)((4 << 8) | 2), (ushort)((5 << 8) | 3), (ushort)10, (ushort)20, (ushort)8, (ushort)9));
             FrontEdit.SetScalar(unit, 98, "u16", (ushort)5432);
@@ -268,7 +268,7 @@ public class GameToolsTests
         host.RunTool("export");
         var built = FrontToBtl.Build(doc);
         Assert.True(built.Ok, string.Join("\n", built.Issues));
-        var read = BtlToFront.FromBytes(built.Bytes);
+        var read = BtlToFront.FromBytes(built.Bytes,doc.Context);
         Assert.True(read.Ok, string.Join("\n", read.Issues));
         var info = (BtlStruct)Unit(read.Document, 0).F[0];
         Assert.Equal(13, Convert.ToInt32(info.V[6])); Assert.Equal((4 << 8) | 17, Convert.ToInt32(info.V[4]));

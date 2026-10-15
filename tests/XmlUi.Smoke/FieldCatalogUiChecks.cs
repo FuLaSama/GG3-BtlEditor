@@ -14,7 +14,7 @@ internal static class FieldCatalogUiChecks
 
     public static void Run(string root)
     {
-        var context = new SchemaContext(FbsSchema.LoadFromText(File.ReadAllText(Path.Combine(root, "schema/battle.fbs"))
+        var context = new SchemaContext(FbsSchema.LoadFromText(File.ReadAllText(Path.Combine(root, "tests/FrontEdit.Tests/Fixtures/battle-legacy.fbs"))
             .Replace("extra_table_12:AIAgentTable12", "extra_table_12:AIAgentTable11")));
         var catalog = FieldCatalog.Builtin.Overlay(FieldCatalog.Parse("""
             {"version":1,"revision":"ui-fixture.r2","fields":[
@@ -27,7 +27,7 @@ internal static class FieldCatalogUiChecks
         var host = new ScriptHost(); host.ConfigureFields(catalog);
         foreach (var script in layout.Bundle.Scripts) host.Execute(script.Text, script.Name);
         var doc = new BtlFrontDocument { Context = context, Root = BtlFrontJson.NewTable() };
-        var unit = UnitEdits.Create(0, 0, 1, 101, 1, 0, 10, 30);
+        var unit = UnitEdits.Create(0, 0, 1, 101, 1, 0, 10, 30,doc.Context);
         FrontEdit.EnsureVec(FrontEdit.EnsureTable(doc.Root, 6), 0, "table").V.Add(unit);
         FrontEdit.SetScalar(FrontEdit.EnsureTable(unit, 11), 0, "u16", (ushort)77);
         var general = FrontEdit.EnsureTable(unit, 12);
